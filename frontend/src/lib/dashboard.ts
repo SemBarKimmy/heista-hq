@@ -39,11 +39,22 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function normalizeBaseUrl(input?: string) {
+  const value = (input || "").trim()
+  if (!value) return ""
+  return value.endsWith("/") ? value.slice(0, -1) : value
+}
+
+function endpoint(path: string) {
+  const base = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL)
+  return `${base}${path}`
+}
+
 export async function getTokenUsage(fetcher: typeof fetch = fetch): Promise<TokenUsageData> {
-  const endpoint = process.env.OPENCLAW_TOKEN_USAGE_ENDPOINT || "/api/openclaw/token-usage"
+  const tokenEndpoint = process.env.OPENCLAW_TOKEN_USAGE_ENDPOINT || endpoint("/api/token-usage")
 
   try {
-    const response = await fetcher(endpoint, { cache: "no-store" })
+    const response = await fetcher(tokenEndpoint, { cache: "no-store" })
     if (!response.ok) throw new Error("token usage fetch failed")
     const data = (await response.json()) as Partial<TokenUsageData>
     return {
@@ -61,29 +72,16 @@ export async function getTokenUsage(fetcher: typeof fetch = fetch): Promise<Toke
       period: "24h",
       updatedAt: nowIso(),
       source: "stub",
-      todo: "TODO(elisa): expose OpenClaw token usage endpoint and wire auth/schema",
+      todo: "Token endpoint unavailable; check NEXT_PUBLIC_API_URL or OPENCLAW_TOKEN_USAGE_ENDPOINT.",
     }
   }
 }
 
 export async function getVpsStatus(fetcher: typeof fetch = fetch): Promise<VpsStatusData> {
-  const endpoint = process.env.VPS_STATUS_ENDPOINT
-  if (!endpoint) {
-    return {
-      status: "unknown",
-      region: "n/a",
-      uptimePercent: 0,
-      cpuPercent: 0,
-      ramPercent: 0,
-      diskPercent: 0,
-      updatedAt: nowIso(),
-      source: "stub",
-      todo: "TODO(elisa): connect VPS status endpoint/DB contract",
-    }
-  }
+  const vpsEndpoint = process.env.VPS_STATUS_ENDPOINT || endpoint("/api/vps")
 
   try {
-    const response = await fetcher(endpoint, { cache: "no-store" })
+    const response = await fetcher(vpsEndpoint, { cache: "no-store" })
     if (!response.ok) throw new Error("vps fetch failed")
     const data = (await response.json()) as Partial<VpsStatusData>
     return {
@@ -107,29 +105,17 @@ export async function getVpsStatus(fetcher: typeof fetch = fetch): Promise<VpsSt
       diskPercent: 0,
       updatedAt: nowIso(),
       source: "stub",
-      todo: "TODO(elisa): endpoint unreachable, fallback to stub",
+      todo: "VPS endpoint unavailable; check NEXT_PUBLIC_API_URL or VPS_STATUS_ENDPOINT.",
     }
   }
 }
 
 export async function getTrends(fetcher: typeof fetch = fetch): Promise<TrendsData> {
-  const endpoint = process.env.TRENDS_ENDPOINT
+  const trendsEndpoint = process.env.TRENDS_ENDPOINT || endpoint("/api/trends")
   const ts = nowIso()
 
-  if (!endpoint) {
-    return {
-      fetchedAt: ts,
-      updatedAt: ts,
-      items: [
-        { title: "No trend feed configured", source: "news", score: 0 },
-      ],
-      source: "stub",
-      todo: "TODO(andries): connect News/Twitter trends DB query endpoint",
-    }
-  }
-
   try {
-    const response = await fetcher(endpoint, { cache: "no-store" })
+    const response = await fetcher(trendsEndpoint, { cache: "no-store" })
     if (!response.ok) throw new Error("trends fetch failed")
     const data = (await response.json()) as Partial<TrendsData>
     const fetchedAt = data.fetchedAt ?? data.updatedAt ?? ts
@@ -144,11 +130,9 @@ export async function getTrends(fetcher: typeof fetch = fetch): Promise<TrendsDa
     return {
       fetchedAt: ts,
       updatedAt: ts,
-      items: [
-        { title: "Trend feed unavailable", source: "twitter", score: 0 },
-      ],
+      items: [{ title: "Trend feed unavailable", source: "twitter", score: 0 }],
       source: "stub",
-      todo: "TODO(andries): endpoint unreachable, fallback to stub",
+      todo: "Trends endpoint unavailable; check NEXT_PUBLIC_API_URL or TRENDS_ENDPOINT.",
     }
   }
 }
