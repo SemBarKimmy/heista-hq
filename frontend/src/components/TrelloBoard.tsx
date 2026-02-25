@@ -52,6 +52,8 @@ const INITIAL_COLUMNS: Column[] = [
 
 const COLUMN_IDS = INITIAL_COLUMNS.map((column) => column.id)
 
+const toTestIdSafe = (value: string) => value.replace(/\s+/g, '-').toLowerCase()
+
 export function TrelloBoard() {
   const [columns, setColumns] = useState<Column[]>(INITIAL_COLUMNS)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
@@ -237,13 +239,14 @@ export function TrelloBoard() {
         onDragEnd={handleDragEnd}
       >
         {columns.map((column) => (
-          <div key={column.id} className="w-80 flex-shrink-0">
+          <div key={column.id} className="w-80 flex-shrink-0" data-testid={`column-${column.id}`}>
             <Card className="bg-muted border-none shadow-none h-fit">
               <CardHeader className="p-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm font-bold text-foreground">{column.title}</CardTitle>
                 <Button 
                   variant="ghost" 
                   size="sm" 
+                  data-testid="open-add-task"
                   className="h-8 w-8 p-0"
                   onClick={() => setAddingToColumn(column.id)}
                 >
@@ -266,6 +269,7 @@ export function TrelloBoard() {
                   <div className="mt-2 space-y-2">
                     <Input
                       autoFocus
+                      data-testid="new-task-input"
                       placeholder="Enter task title..."
                       value={newTaskTitle}
                       onChange={(e) => setNewTaskTitle(e.target.value)}
@@ -276,7 +280,7 @@ export function TrelloBoard() {
                       className="bg-card text-sm h-9"
                     />
                     <div className="flex items-center gap-2">
-                      <Button size="sm" onClick={() => addTask(column.id)} className="h-8">
+                      <Button size="sm" data-testid="confirm-add-task" onClick={() => addTask(column.id)} className="h-8">
                         <Check className="h-4 w-4 mr-1" /> Add
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => setAddingToColumn(null)} className="h-8">
@@ -288,6 +292,7 @@ export function TrelloBoard() {
                   <div className="mt-2">
                     <Button 
                       variant="ghost" 
+                      data-testid="add-card-trigger"
                       className="w-full justify-start text-muted-foreground text-xs hover:bg-accent h-8"
                       onClick={() => setAddingToColumn(column.id)}
                     >
@@ -339,6 +344,7 @@ function SortableTask({ task }: { task: Task }) {
     <div
       ref={setNodeRef}
       style={style}
+      data-testid={`task-card-${toTestIdSafe(task.title)}`}
       className="bg-card p-3 rounded-md shadow-sm border border-border group relative"
     >
       <div className="flex items-start gap-2">
