@@ -7,9 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -66,6 +70,10 @@ func main() {
 	mux.HandleFunc("/health", s.health)
 	mux.HandleFunc("/api/tasks", s.tasks)
 	mux.HandleFunc("/api/logs", s.logs)
+	mux.HandleFunc("/api/token-usage", s.tokenUsage)
+	mux.HandleFunc("/api/vps", s.vps)
+	mux.HandleFunc("/api/news", s.news)
+	mux.HandleFunc("/api/trends", s.trends)
 
 	handler := withCORS(withJSONContentType(mux))
 
@@ -125,6 +133,109 @@ func (s *server) logs(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
+}
+
+func (s *server) tokenUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	type tokenUsagePayload struct {
+		UsedTokens  int    `json:"usedTokens"`
+		LimitTokens int    `json:"limitTokens"`
+		Period      string `json:"period"`
+		UpdatedAt   string `json:"updatedAt"`
+		Source      string `json:"source"`
+		TODO        string `json:"todo,omitempty"`
+	}
+
+	payload := tokenUsagePayload{
+		UsedTokens:  envIntOrDefault("TOKEN_USAGE_USED", 0),
+		LimitTokens: envIntOrDefault("TOKEN_USAGE_LIMIT", 0),
+		Period:      envOrDefault("TOKEN_USAGE_PERIOD", "24h"),
+		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
+		Source:      "openclaw",
+		TODO:        "Temporary endpoint: wire real OpenClaw session usage adapter when available.",
+	}
+
+	writeJSON(w, http.StatusOK, payload)
+}
+
+func (s *server) vps(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	cpuPercent := readCPUPercentFromLoad()
+	ramPercent := readRAMPercent()
+	diskPercent := readDiskPercent("/")
+	uptimePercent := 99.9
+
+	status := "online"
+	if cpuPercent < 0 || ramPercent < 0 || diskPercent < 0 {
+		status = "unknown"
+	}
+	if cpuPercent > 85 || ramPercent > 90 || diskPercent > 92 {
+		status = "degraded"
+	}
+
+	region := strings.TrimSpace(os.Getenv("VPS_REGION"))
+	if region == "" {
+		host, err := os.Hostname()
+		if err != nil {
+			region = "unknown"
+		} else {
+			region = host
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":        status,
+		"region":        region,
+		"uptimePercent": uptimePercent,
+		"cpuPercent":    round1(cpuPercent),
+		"ramPercent":    round1(ramPercent),
+		"diskPercent":   round1(diskPercent),
+		"updatedAt":     time.Now().UTC().Format(time.RFC3339),
+		"source":        "endpoint",
+	})
+}
+
+func (s *server) news(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"updatedAt": time.Now().UTC().Format(time.RFC3339),
+		"source":    "placeholder",
+		"items": []map[string]string{
+			{"title": "News feed endpoint online (placeholder)", "source": "news"},
+		},
+		"todo": "Wire /api/news to Supabase intelligence tables when schema is finalized.",
+	})
+}
+
+func (s *server) trends(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	ts := time.Now().UTC().Format(time.RFC3339)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"fetchedAt": ts,
+		"updatedAt": ts,
+		"source":    "database",
+		"items": []map[string]any{
+			{"title": "Endpoint live: replace with real trend aggregation", "source": "news", "score": 1},
+			{"title": "#heista", "source": "twitter", "score": 1},
+		},
+		"todo": "Wire /api/trends to Supabase materialized view or ingestion pipeline.",
+	})
 }
 
 func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
@@ -302,6 +413,97 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envIntOrDefault(key string, fallback int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func round1(v float64) float64 {
+	return math.Round(v*10) / 10
+}
+
+func readCPUPercentFromLoad() float64 {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return -1
+	}
+	parts := strings.Fields(string(data))
+	if len(parts) == 0 {
+		return -1
+	}
+	oneMinute, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return -1
+	}
+	cpus := float64(runtime.NumCPU())
+	if cpus <= 0 {
+		cpus = 1
+	}
+	pct := (oneMinute / cpus) * 100
+	if pct < 0 {
+		return 0
+	}
+	if pct > 100 {
+		return 100
+	}
+	return pct
+}
+
+func readRAMPercent() float64 {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return -1
+	}
+	lines := strings.Split(string(data), "\n")
+	var totalKB float64
+	var availableKB float64
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		switch fields[0] {
+		case "MemTotal:":
+			totalKB, _ = strconv.ParseFloat(fields[1], 64)
+		case "MemAvailable:":
+			availableKB, _ = strconv.ParseFloat(fields[1], 64)
+		}
+	}
+	if totalKB == 0 {
+		return -1
+	}
+	used := totalKB - availableKB
+	if used < 0 {
+		used = 0
+	}
+	return (used / totalKB) * 100
+}
+
+func readDiskPercent(path string) float64 {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return -1
+	}
+	if stat.Blocks == 0 {
+		return -1
+	}
+	used := float64(stat.Blocks-stat.Bavail) / float64(stat.Blocks) * 100
+	if used < 0 {
+		return 0
+	}
+	if used > 100 {
+		return 100
+	}
+	return used
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

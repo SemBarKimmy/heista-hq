@@ -30,6 +30,20 @@ describe("dashboard adapters", () => {
     const data = await getTokenUsage(mockFetch as unknown as typeof fetch)
     expect(data.source).toBe("openclaw")
     expect(data.usedTokens).toBe(1234)
+    expect(mockFetch).toHaveBeenCalledWith("https://example.com/openclaw", { cache: "no-store" })
+  })
+
+  it("builds token endpoint from NEXT_PUBLIC_API_URL by default", async () => {
+    delete process.env.OPENCLAW_TOKEN_USAGE_ENDPOINT
+    process.env.NEXT_PUBLIC_API_URL = "https://api.example.com"
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ usedTokens: 1, limitTokens: 2, source: "openclaw" }),
+    })
+
+    await getTokenUsage(mockFetch as unknown as typeof fetch)
+    expect(mockFetch).toHaveBeenCalledWith("https://api.example.com/api/token-usage", { cache: "no-store" })
   })
 
   it("maps VPS endpoint response", async () => {
@@ -43,6 +57,19 @@ describe("dashboard adapters", () => {
     expect(data.source).toBe("endpoint")
     expect(data.status).toBe("online")
     expect(data.cpuPercent).toBe(20)
+  })
+
+  it("builds VPS endpoint from NEXT_PUBLIC_API_URL by default", async () => {
+    delete process.env.VPS_STATUS_ENDPOINT
+    process.env.NEXT_PUBLIC_API_URL = "https://api.example.com/"
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "online" }),
+    })
+
+    await getVpsStatus(mockFetch as unknown as typeof fetch)
+    expect(mockFetch).toHaveBeenCalledWith("https://api.example.com/api/vps", { cache: "no-store" })
   })
 
   it("marks trends stale after 2 hours", () => {

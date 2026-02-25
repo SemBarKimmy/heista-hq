@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -31,5 +32,45 @@ func TestCORSAllowsKnownOrigin(t *testing.T) {
 
 	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://heista-dev.vercel.app" {
 		t.Fatalf("expected Access-Control-Allow-Origin to be set, got %q", got)
+	}
+}
+
+func TestTokenUsageEndpoint(t *testing.T) {
+	s := &server{}
+	r := httptest.NewRequest(http.MethodGet, "/api/token-usage", nil)
+	w := httptest.NewRecorder()
+
+	s.tokenUsage(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("expected valid json response: %v", err)
+	}
+	if payload["source"] != "openclaw" {
+		t.Fatalf("expected source=openclaw, got %v", payload["source"])
+	}
+}
+
+func TestVPSEndpoint(t *testing.T) {
+	s := &server{}
+	r := httptest.NewRequest(http.MethodGet, "/api/vps", nil)
+	w := httptest.NewRecorder()
+
+	s.vps(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("expected valid json response: %v", err)
+	}
+	if _, ok := payload["cpuPercent"]; !ok {
+		t.Fatal("expected cpuPercent in payload")
 	}
 }
