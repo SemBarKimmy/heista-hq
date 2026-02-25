@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 const TEST_PREFIX = `e2e-${Date.now()}`
+const toTestIdSafe = (value: string) => value.replace(/\s+/g, '-').toLowerCase()
 
 test.describe('Tier-2 core flows', () => {
   test('tasks: add card, move card, and persistence after reload', async ({ page }) => {
@@ -15,16 +16,16 @@ test.describe('Tier-2 core flows', () => {
     await todoColumn.getByTestId('new-task-input').fill(cardTitle)
     await todoColumn.getByTestId('confirm-add-task').click()
 
-    const createdCard = page.getByTestId(`task-card-${cardTitle}`)
+    const createdCard = page.getByTestId(`task-card-${toTestIdSafe(cardTitle)}`)
     await expect(createdCard).toBeVisible()
 
     const inProgressColumn = page.getByTestId('column-col-2')
     await dragCardToColumn(page, createdCard, inProgressColumn)
 
-    await expect(inProgressColumn.getByTestId(`task-card-${cardTitle}`)).toBeVisible()
+    await expect(inProgressColumn.getByTestId(`task-card-${toTestIdSafe(cardTitle)}`)).toBeVisible()
 
     await page.reload()
-    await expect(page.getByTestId('column-col-2').getByTestId(`task-card-${cardTitle}`)).toBeVisible()
+    await expect(page.getByTestId('column-col-2').getByTestId(`task-card-${toTestIdSafe(cardTitle)}`)).toBeVisible()
   })
 
   test('logs: new activity log is visible after task action', async ({ page }) => {
