@@ -110,8 +110,13 @@
 ## 🚀 CI/CD Policy (Merge-Only Deploy)
 - CI dipisah dari deploy:
   - `.github/workflows/ci.yml` untuk test/build (PR + non-deploy branch pushes).
-  - `.github/workflows/deploy.yml` untuk deploy **hanya** pada push ke `develop`/`master`.
+  - `.github/workflows/deploy.yml` untuk deploy **hanya** pada push ke `develop`/`master` (tidak jalan pada PR create/update, tidak jalan pada push feature branch).
+- Deploy workflow (`deploy.yml`) flow: checkout -> setup node -> `npm ci` -> `vercel build` -> `vercel deploy --prebuilt` -> set alias environment.
+- Alias behavior:
+  - Push ke `develop` => preview deploy + alias `heista-dev.vercel.app`
+  - Push ke `master` => prod deploy + alias `heista-hq.vercel.app`
+- Required GitHub Secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
 - Vercel Git auto deployment harus **OFF** (deploy source of truth = GitHub Actions).
 - Release version bump via `.github/workflows/version-bump.yml` + `VERSION` file.
 
-*Last Updated: 2026-02-25 13:02 WIB*
+*Last Updated: 2026-02-25 19:49 WIB*
