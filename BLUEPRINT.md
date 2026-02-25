@@ -22,10 +22,11 @@
 ---
 
 ## 🗺️ Page Structure & Sitemap
-1.  **Dashboard (`/`)**: Main Trello Board (Task Management).
-2.  **Agent Logs (`/logs`)**: Real-time Agent Activity Monitoring.
-3.  **Settings (`/settings`)**: Account, Workspace, & MFA Config.
-4.  **Auth (`/login`, `/mfa`)**: Secure entry.
+1. **Dashboard (`/`)**: Main Trello Board + bento cards (token usage, VPS status, News/Twitter trends).
+2. **Agent Monitoring (`/monitor`)**: Status card per agent (Off/Idle/Busy), model, current task, reason.
+3. **Agent Logs (`/logs`)**: Raw terminal-style logs (initial fetch + realtime INSERT).
+4. **Settings (`/settings`)**: Account, Workspace, & MFA Config.
+5. **Auth (`/login`, `/mfa`)**: Secure entry.
 
 ---
 
@@ -37,7 +38,8 @@
 | 1-4 | Foundation (monorepo, schema, initial UI) | (historical; awalnya autopilot) | done |
 | 5 | QA Fixes & UI Refactor | PR: https://github.com/SemBarKimmy/heista-hq/pull/1 | merged |
 | 6 | Core Fixes (Add Card, Logs, Sidebar, Dark/Light) | PR: https://github.com/SemBarKimmy/heista-hq/pull/2 | merged |
-| 7 (v2) | UI/UX refactor total (Top Nav, Bento Dashboard, Mobile-first, no gradients) + auto-update feed 2 jam | Branch: `feat/v2-foundation` | in progress (Arga - Iterasi 7) |
+| 7 (v2) | UI/UX refactor total (Top Nav, Bento Dashboard, Mobile-first, no gradients) + auto-update feed 2 jam | Branch: `feat/v2-foundation` | running |
+| 8 (v2) | Monitoring & Feeds split: `/monitor` + raw `/logs` + data adapters dashboard + unit tests | Branch: `feat/v2-monitoring-feeds` | running |
 
 ---
 
@@ -47,17 +49,26 @@
 - [x] Drag & Drop (Cross-column)
 - [x] Persist order to Supabase
 - [x] UI consistent with Pink/Purple theme
-- [x] **Add Card Functionality** (Modal/Input) -> *Recently Added*
+- [x] **Add Card Functionality** (Modal/Input)
 
 ### 2. Agent Monitoring
-- [x] Initial fetch (100 logs)
-- [x] Real-time INSERT subscription
-- [x] **Auto-logging** on Trello actions -> *Recently Added*
+- [x] Page `/monitor` untuk cards per-agent
+- [x] Field wajib: status (Off/Idle/Busy), model, current task, reason
 
-### 3. Global UI/UX
-- [x] Sidebar Navigation
-- [x] Dark/Light Mode Toggle
-- [x] ThemeProvider integration
+### 3. Agent Logs (`/logs`)
+- [x] Raw terminal-style logs tampil
+- [x] Initial fetch (100 logs)
+- [x] Realtime INSERT subscription
+
+### 4. Dashboard data integrations (`/`)
+- [x] Token usage adapter (OpenClaw endpoint + stub + TODO schema)
+- [x] VPS status adapter (endpoint/DB + fallback)
+- [x] News/Twitter trends adapter (DB endpoint + fallback)
+- [x] Auto-refresh policy 2 jam (`revalidate = 7200`) + stale check via server timestamp
+
+### 5. Testing (XP)
+- [x] Unit test `/monitor` rendering
+- [x] Unit test dashboard data adapters
 
 ---
 
@@ -94,4 +105,4 @@
 3. **QA (di luar iterasi):** Martha menjalankan Integration Testing + UAT **setelah merge ke `develop`**.
 4. **Docs / Gate:** **PR tidak boleh di-merge ke `develop` kalau BLUEPRINT.md belum diupdate** (Iteration Log + scope + UAT checklist).
 
-*Last Updated: 2026-02-25 12:24 WIB*
+*Last Updated: 2026-02-25 12:35 WIB*
