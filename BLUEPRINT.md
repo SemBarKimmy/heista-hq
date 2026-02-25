@@ -111,7 +111,9 @@
 - CI dipisah dari deploy:
   - `.github/workflows/ci.yml` untuk test/build (PR + non-deploy branch pushes).
   - `.github/workflows/deploy.yml` untuk deploy **hanya** pada push ke `develop`/`master` (tidak jalan pada PR create/update, tidak jalan pada push feature branch).
-- Deploy workflow (`deploy.yml`) flow: checkout -> setup node -> `npm ci` -> `vercel build` -> `vercel deploy --prebuilt` -> set alias environment.
+- Deploy workflow (`deploy.yml`) flow: checkout -> setup node -> `npm ci` (di `frontend`) -> `vercel pull` -> `vercel build` -> `vercel deploy --prebuilt` -> set alias environment.
+- Vercel CLI wajib pakai scope: `--scope barangs-projects-fc314b46`.
+- Root directory deploy: `frontend`.
 - Alias behavior:
   - Push ke `develop` => preview deploy + alias `heista-dev.vercel.app`
   - Push ke `master` => prod deploy + alias `heista-hq.vercel.app`
@@ -119,4 +121,4 @@
 - Vercel Git auto deployment harus **OFF** (deploy source of truth = GitHub Actions).
 - Release version bump via `.github/workflows/version-bump.yml` + `VERSION` file.
 
-*Last Updated: 2026-02-25 19:49 WIB*
+*Last Updated: 2026-02-25 20:33 WIB*
