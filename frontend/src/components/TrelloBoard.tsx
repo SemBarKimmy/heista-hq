@@ -23,8 +23,10 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plus, GripVertical } from "lucide-react"
+import { Plus, GripVertical, Check, X } from "lucide-react"
 import { boardApi } from "@/lib/api"
+import { supabase } from "@/lib/supabase"
+import { Input } from "@/components/ui/input"
 
 interface Task {
   id: string
@@ -47,6 +49,8 @@ export function TrelloBoard() {
     { id: "col-3", title: "Done", tasks: [] },
   ])
   const [activeTask, setActiveTask] = useState<Task | null>(null)
+  const [addingToColumn, setAddingToColumn] = useState<string | null>(null)
+  const [newTaskTitle, setNewTaskTitle] = useState("")
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -54,6 +58,19 @@ export function TrelloBoard() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
+
+  const logActivity = async (message: string, level: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' = 'INFO') => {
+    try {
+      await supabase.from('agent_logs').insert({
+        agent_id: 'user-interface',
+        level,
+        message,
+        metadata: { source: 'TrelloBoard' }
+      })
+    } catch (e) {
+      console.error("Failed to log activity:", e)
+    }
+  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -149,8 +166,57 @@ export function TrelloBoard() {
       const index = finalCol.tasks.findIndex(t => t.id === activeId)
       if (task) {
         await boardApi.updateTaskOrder(activeId, finalCol.id, index)
-        // Ideally sync all task orders in that column, but keeping it simple for now
+        logActivity(`Moved task "${task.title}" to ${finalCol.title}`, 'SUCCESS')
       }
+    }
+  }
+
+  const addTask = async (columnId: string) => {
+    if (!newTaskTitle.trim()) return
+
+    const column = columns.find(c => c.id === columnId)
+    if (!column) return
+
+    const newTask = {
+      title: newTaskTitle,
+      column_id: columnId,
+      order: column.tasks.length
+    }
+
+    // Optimistic update
+    const tempId = `temp-${Date.now()}`
+    const optimisticTask = { ...newTask, id: tempId }
+    
+    setColumns(prev => prev.map(col => {
+      if (col.id === columnId) {
+        return { ...col, tasks: [...col.tasks, optimisticTask] }
+      }
+      return col
+    }))
+
+    setNewTaskTitle("")
+    setAddingToColumn(null)
+
+    // API call
+    const { data, error } = await boardApi.addTask(newTask)
+    
+    if (data && !error) {
+      setColumns(prev => prev.map(col => {
+        if (col.id === columnId) {
+          return { ...col, tasks: col.tasks.map(t => t.id === tempId ? data : t) }
+        }
+        return col
+      }))
+      logActivity(`Added new task: "${data.title}"`, 'SUCCESS')
+    } else {
+      // Rollback on error
+      setColumns(prev => prev.map(col => {
+        if (col.id === columnId) {
+          return { ...col, tasks: col.tasks.filter(t => t.id !== tempId) }
+        }
+        return col
+      }))
+      logActivity(`Failed to add task: ${error?.message}`, 'ERROR')
     }
   }
 
@@ -168,7 +234,12 @@ export function TrelloBoard() {
             <Card className="bg-muted border-none shadow-none h-fit">
               <CardHeader className="p-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm font-bold text-foreground">{column.title}</CardTitle>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8 w-8 p-0"
+                  onClick={() => setAddingToColumn(column.id)}
+                >
                   <Plus className="h-4 w-4" />
                 </Button>
               </CardHeader>
@@ -183,11 +254,40 @@ export function TrelloBoard() {
                     ))}
                   </div>
                 </SortableContext>
-                <div className="mt-2">
-                   <Button variant="ghost" className="w-full justify-start text-muted-foreground text-xs hover:bg-accent h-8">
-                     <Plus className="h-3 w-3 mr-2" /> Add a card
-                   </Button>
-                </div>
+                
+                {addingToColumn === column.id ? (
+                  <div className="mt-2 space-y-2">
+                    <Input
+                      autoFocus
+                      placeholder="Enter task title..."
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addTask(column.id)
+                        if (e.key === "Escape") setAddingToColumn(null)
+                      }}
+                      className="bg-card text-sm h-9"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={() => addTask(column.id)} className="h-8">
+                        <Check className="h-4 w-4 mr-1" /> Add
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setAddingToColumn(null)} className="h-8">
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2">
+                    <Button 
+                      variant="ghost" 
+                      className="w-full justify-start text-muted-foreground text-xs hover:bg-accent h-8"
+                      onClick={() => setAddingToColumn(column.id)}
+                    >
+                      <Plus className="h-3 w-3 mr-2" /> Add a card
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
