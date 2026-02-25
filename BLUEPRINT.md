@@ -22,11 +22,12 @@
 ---
 
 ## 🗺️ Page Structure & Sitemap
-1. **Dashboard (`/`)**: Main Trello Board + bento cards (token usage, VPS status, News/Twitter trends).
-2. **Agent Monitoring (`/monitor`)**: Status card per agent (Off/Idle/Busy), model, current task, reason.
-3. **Agent Logs (`/logs`)**: Raw terminal-style logs (initial fetch + realtime INSERT).
-4. **Settings (`/settings`)**: Account, Workspace, & MFA Config.
-5. **Auth (`/login`, `/mfa`)**: Secure entry.
+1. **Dashboard (`/`)**: Bento summary cards + quick summary (tanpa full Trello board).
+2. **Tasks (`/tasks`)**: Main Trello Board (Task Management).
+3. **Agent Monitoring (`/monitor`)**: Status card per agent (Off/Idle/Busy), model, current task, reason.
+4. **Agent Logs (`/logs`)**: Raw terminal-style logs (initial fetch + realtime INSERT).
+5. **Settings (`/settings`)**: Account, Workspace, & MFA Config.
+6. **Auth (`/login`, `/mfa`)**: Secure entry.
 
 ---
 
@@ -38,9 +39,9 @@
 | 1-4 | Foundation (monorepo, schema, initial UI) | (historical; awalnya autopilot) | done |
 | 5 | QA Fixes & UI Refactor | PR: https://github.com/SemBarKimmy/heista-hq/pull/1 | merged |
 | 6 | Core Fixes (Add Card, Logs, Sidebar, Dark/Light) | PR: https://github.com/SemBarKimmy/heista-hq/pull/2 | merged |
-| 7 (v2) | UI/UX refactor total (Top Nav, Bento Dashboard, Mobile-first, no gradients) + auto-update feed 2 jam | Branch: `feat/v2-foundation` | running |
+| 7 (v2) | UI/UX refactor total (Top Nav, Bento Dashboard, Mobile-first, no gradients) + auto-update feed 2 jam | Branch: `feat/v2-foundation` | done |
 | 8 (v2) | Monitoring & Feeds split: `/monitor` + raw `/logs` + data adapters dashboard + unit tests | PR: https://github.com/SemBarKimmy/heista-hq/pull/3 | merged |
-| 9 (v2) | Real data wiring dashboard + CI/Deploy split + version bump automation | Branch: `feat/v2-real-data-devops` | running |
+| 9 (v2) | `/tasks` page as full board + floating centered top nav + mobile drawer polish + route tests | Branch: `feat/v2-tasks-nav` | running |
 
 ---
 
