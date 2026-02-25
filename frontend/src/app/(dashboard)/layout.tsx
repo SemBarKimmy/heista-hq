@@ -1,22 +1,14 @@
-import { Sidebar } from "@/components/Sidebar"
-import { ModeToggle } from "@/components/ModeToggle"
+import { TopNav } from "@/components/TopNav"
 
-export default function RootLayout({
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 items-center justify-end px-6 border-b border-border bg-card/50 backdrop-blur-sm">
-          <ModeToggle />
-        </header>
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
-        </main>
-      </div>
+    <div className="min-h-screen bg-background">
+      <TopNav />
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
     </div>
   )
 }

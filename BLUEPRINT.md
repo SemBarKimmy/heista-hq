@@ -29,6 +29,18 @@
 
 ---
 
+## 🧾 Iteration Log (Wajib Diupdate)
+> Source of truth untuk "kita lagi iterasi keberapa" + link PR.
+
+| Iterasi | Fokus | Branch / PR | Status |
+|---|---|---|---|
+| 1-4 | Foundation (monorepo, schema, initial UI) | (historical; awalnya autopilot) | done |
+| 5 | QA Fixes & UI Refactor | PR: https://github.com/SemBarKimmy/heista-hq/pull/1 | merged |
+| 6 | Core Fixes (Add Card, Logs, Sidebar, Dark/Light) | PR: https://github.com/SemBarKimmy/heista-hq/pull/2 | merged |
+| 7 (v2) | UI/UX refactor total (Top Nav, Bento Dashboard, Mobile-first, no gradients) + auto-update feed 2 jam | Branch: `feat/v2-foundation` | in progress (Arga - Iterasi 7) |
+
+---
+
 ## 🛠️ Feature Requirements (Current Status)
 
 ### 1. Trello Board
@@ -49,9 +61,37 @@
 
 ---
 
+## ✅ QA / Integration Testing / UAT (Martha)
+> **Martha kerja setelah PR sudah di-merge ke `develop`** (bukan saat masih di branch fitur).
+> Fokus: Integration Testing + UAT end-to-end (bukan cuma unit test).
+
+### UAT Checklist (wajib PASS)
+**Task Board**
+- [ ] Add card (judul minimal) → muncul di UI → tersimpan di Supabase.
+- [ ] Move card antar kolom (To Do → In Progress → Done) = "progress card" harus bisa.
+- [ ] Reload page → state tetap sesuai DB.
+
+**Agent Monitoring (`/monitor`)**
+- [ ] Tiap agent tampil: status (Off/Idle/Busy), model, current task, dan reason (kenapa Busy/Idle).
+
+**Agent Logs (`/logs`)**
+- [ ] Raw terminal logs tampil.
+- [ ] Aksi di Task Board menghasilkan log baru (realtime) dan log lama bisa di-load (initial fetch).
+
+**Dashboard (`/`)**
+- [ ] Mobile-first layout rapi.
+- [ ] Bento cards tampil: AI token usage, VPS status, News, Twitter trends.
+
+**General**
+- [ ] Dark mode / Light mode toggle berfungsi.
+- [ ] Tidak ada gradient, theme OKLCH konsisten.
+
+---
+
 ## 📋 XP Workflow Rules
 1. **Branching:** `feat/*` -> PR to `develop` -> Merge to `master`.
-2. **Review:** PR wajib di-audit Martha sebelum merge.
-3. **Docs:** Update file ini setiap kali ada perubahan struktur atau penambahan page.
+2. **Tests (di dalam iterasi):** Unit test wajib dibuat di setiap iterasi (XP).
+3. **QA (di luar iterasi):** Martha menjalankan Integration Testing + UAT **setelah merge ke `develop`**.
+4. **Docs / Gate:** **PR tidak boleh di-merge ke `develop` kalau BLUEPRINT.md belum diupdate** (Iteration Log + scope + UAT checklist).
 
-*Last Updated: 2026-02-25 10:35 WIB*
+*Last Updated: 2026-02-25 12:24 WIB*
