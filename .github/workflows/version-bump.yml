@@ -1,0 +1,55 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump VERSION file
+        id: bump
+        run: |
+          current=$(cat VERSION)
+          IFS='.' read -r major minor patch <<< "$current"
+          case "${{ github.event.inputs.bump }}" in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            patch) patch=$((patch+1)) ;;
+          esac
+          next="$major.$minor.$patch"
+          echo "$next" > VERSION
+          echo "next=$next" >> $GITHUB_OUTPUT
+
+      - name: Sync frontend package version
+        run: |
+          node -e "const fs=require('fs');const p='frontend/package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.version='${{ steps.bump.outputs.next }}';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/version-bump-${{ steps.bump.outputs.next }}
+          commit-message: "chore(release): bump version to ${{ steps.bump.outputs.next }}"
+          title: "chore(release): bump version to ${{ steps.bump.outputs.next }}"
+          body: |
+            Automated version bump via workflow_dispatch.
+
+            - bump type: `${{ github.event.inputs.bump }}`
+            - new version: `${{ steps.bump.outputs.next }}`
+          base: develop
