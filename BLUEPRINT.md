@@ -39,7 +39,8 @@
 | 5 | QA Fixes & UI Refactor | PR: https://github.com/SemBarKimmy/heista-hq/pull/1 | merged |
 | 6 | Core Fixes (Add Card, Logs, Sidebar, Dark/Light) | PR: https://github.com/SemBarKimmy/heista-hq/pull/2 | merged |
 | 7 (v2) | UI/UX refactor total (Top Nav, Bento Dashboard, Mobile-first, no gradients) + auto-update feed 2 jam | Branch: `feat/v2-foundation` | running |
-| 8 (v2) | Monitoring & Feeds split: `/monitor` + raw `/logs` + data adapters dashboard + unit tests | Branch: `feat/v2-monitoring-feeds` | running |
+| 8 (v2) | Monitoring & Feeds split: `/monitor` + raw `/logs` + data adapters dashboard + unit tests | PR: https://github.com/SemBarKimmy/heista-hq/pull/3 | merged |
+| 9 (v2) | Real data wiring dashboard + CI/Deploy split + version bump automation | Branch: `feat/v2-real-data-devops` | running |
 
 ---
 
@@ -61,9 +62,9 @@
 - [x] Realtime INSERT subscription
 
 ### 4. Dashboard data integrations (`/`)
-- [x] Token usage adapter (OpenClaw endpoint + stub + TODO schema)
-- [x] VPS status adapter (endpoint/DB + fallback)
-- [x] News/Twitter trends adapter (DB endpoint + fallback)
+- [x] Token usage adapter (OpenClaw endpoint + fallback route contract `/api/openclaw/token-usage`)
+- [x] VPS status adapter (endpoint/DB + fallback; CPU/RAM/Disk + `updatedAt`)
+- [x] News/Twitter trends adapter (DB endpoint + fallback; include `updatedAt` + next refresh indicator)
 - [x] Auto-refresh policy 2 jam (`revalidate = 7200`) + stale check via server timestamp
 
 ### 5. Testing (XP)
@@ -105,4 +106,11 @@
 3. **QA (di luar iterasi):** Martha menjalankan Integration Testing + UAT **setelah merge ke `develop`**.
 4. **Docs / Gate:** **PR tidak boleh di-merge ke `develop` kalau BLUEPRINT.md belum diupdate** (Iteration Log + scope + UAT checklist).
 
-*Last Updated: 2026-02-25 12:35 WIB*
+## 🚀 CI/CD Policy (Merge-Only Deploy)
+- CI dipisah dari deploy:
+  - `.github/workflows/ci.yml` untuk test/build (PR + non-deploy branch pushes).
+  - `.github/workflows/deploy.yml` untuk deploy **hanya** pada push ke `develop`/`master`.
+- Vercel Git auto deployment harus **OFF** (deploy source of truth = GitHub Actions).
+- Release version bump via `.github/workflows/version-bump.yml` + `VERSION` file.
+
+*Last Updated: 2026-02-25 13:02 WIB*
