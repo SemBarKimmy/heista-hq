@@ -4,14 +4,13 @@ import { AgentMonitoring } from '../components/AgentMonitoring'
 import React from 'react'
 
 describe('AgentMonitoring Component', () => {
-  it('should render monitoring title', () => {
+  it('should render monitoring header', () => {
     render(<AgentMonitoring />)
-    expect(screen.getByText('Agent Monitoring')).toBeDefined()
+    expect(screen.getByText('Logs')).toBeDefined()
   })
 
-  it('should render log entries', () => {
+  it('should render empty state by default', () => {
     render(<AgentMonitoring />)
-    expect(screen.getByText('Arga')).toBeDefined()
-    expect(screen.getByText('Starting iteration 4 monitoring')).toBeDefined()
+    expect(screen.getByText('Waiting for logs...')).toBeDefined()
   })
 })
