@@ -32,18 +32,18 @@ jobs:
       - name: Pull Vercel env
         run: |
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
-            vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+            vercel pull --yes --environment=production --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN"
           else
-            vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+            vercel pull --yes --environment=preview --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN"
           fi
         working-directory: frontend
 
       - name: Build artifact
         run: |
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
-            vercel build --prod --token="$VERCEL_TOKEN"
+            vercel build --prod --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN"
           else
-            vercel build --token="$VERCEL_TOKEN"
+            vercel build --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN"
           fi
         working-directory: frontend
 
@@ -51,17 +51,17 @@ jobs:
         id: deploy
         run: |
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
-            DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+            DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN" | tail -n 1)
           else
-            DEPLOYMENT_URL=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
+            DEPLOYMENT_URL=$(vercel deploy --prebuilt --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN" | tail -n 1)
           fi
           echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
         working-directory: frontend
 
       - name: Alias develop deployment
         if: github.ref_name == 'develop'
-        run: vercel alias set "${{ steps.deploy.outputs.deployment_url }}" heista-dev.vercel.app --token="$VERCEL_TOKEN"
+        run: vercel alias set "${{ steps.deploy.outputs.deployment_url }}" heista-dev.vercel.app --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN"
 
       - name: Alias master deployment
         if: github.ref_name == 'master'
-        run: vercel alias set "${{ steps.deploy.outputs.deployment_url }}" heista-hq.vercel.app --token="$VERCEL_TOKEN"
+        run: vercel alias set "${{ steps.deploy.outputs.deployment_url }}" heista-hq.vercel.app --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN"
