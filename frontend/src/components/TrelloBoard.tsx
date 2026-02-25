@@ -10,6 +10,7 @@ import {
   useSensors,
   DragEndEvent,
   DragOverEvent,
+  DragStartEvent,
   DragOverlay,
   defaultDropAnimationSideEffects,
 } from "@dnd-kit/core"
@@ -24,8 +25,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Plus, GripVertical, Check, X } from "lucide-react"
-import { boardApi } from "@/lib/api"
-import { supabase } from "@/lib/supabase"
+import { boardApi, logsApi } from "@/lib/api"
 import { Input } from "@/components/ui/input"
 
 interface Task {
@@ -42,12 +42,18 @@ interface Column {
   tasks: Task[]
 }
 
+let tempTaskCounter = 0
+
+const INITIAL_COLUMNS: Column[] = [
+  { id: "col-1", title: "To Do", tasks: [] },
+  { id: "col-2", title: "In Progress", tasks: [] },
+  { id: "col-3", title: "Done", tasks: [] },
+]
+
+const COLUMN_IDS = INITIAL_COLUMNS.map((column) => column.id)
+
 export function TrelloBoard() {
-  const [columns, setColumns] = useState<Column[]>([
-    { id: "col-1", title: "To Do", tasks: [] },
-    { id: "col-2", title: "In Progress", tasks: [] },
-    { id: "col-3", title: "Done", tasks: [] },
-  ])
+  const [columns, setColumns] = useState<Column[]>(INITIAL_COLUMNS)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
   const [addingToColumn, setAddingToColumn] = useState<string | null>(null)
   const [newTaskTitle, setNewTaskTitle] = useState("")
@@ -60,26 +66,27 @@ export function TrelloBoard() {
   )
 
   const logActivity = async (message: string, level: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' = 'INFO') => {
-    try {
-      await supabase.from('agent_logs').insert({
-        agent_id: 'user-interface',
-        level,
-        message,
-        metadata: { source: 'TrelloBoard' }
-      })
-    } catch (e) {
-      console.error("Failed to log activity:", e)
+    const { error } = await logsApi.addLog({
+      agent_id: 'user-interface',
+      level,
+      message,
+      metadata: { source: 'TrelloBoard' }
+    })
+
+    if (error) {
+      console.error("Failed to log activity:", error)
     }
   }
 
   useEffect(() => {
     const fetchData = async () => {
-      const colIds = columns.map(c => c.id)
-      const { data, error } = await boardApi.getTasks(colIds)
+      const { data, error } = await boardApi.getTasks(COLUMN_IDS)
       if (data && !error) {
         setColumns(prev => prev.map(col => ({
           ...col,
-          tasks: data.filter((t: any) => t.column_id === col.id).sort((a: any, b: any) => a.order - b.order)
+          tasks: data
+            .filter((t) => t.column_id === col.id)
+            .sort((a, b) => a.order - b.order)
         })))
       }
     }
@@ -91,7 +98,7 @@ export function TrelloBoard() {
     return columns.find(col => col.tasks.some(t => t.id === id))
   }
 
-  const handleDragStart = (event: any) => {
+  const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
     const task = columns.flatMap(c => c.tasks).find(t => t.id === active.id)
     if (task) setActiveTask(task)
@@ -184,7 +191,7 @@ export function TrelloBoard() {
     }
 
     // Optimistic update
-    const tempId = `temp-${Date.now()}`
+    const tempId = `temp-${++tempTaskCounter}`
     const optimisticTask = { ...newTask, id: tempId }
     
     setColumns(prev => prev.map(col => {
