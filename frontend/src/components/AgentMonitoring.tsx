@@ -42,7 +42,7 @@ export function AgentMonitoring() {
         <h2 className="font-semibold">Raw Terminal Logs</h2>
       </div>
 
-      <div className="bg-black text-green-400 font-mono text-xs min-h-[460px] max-h-[70vh] overflow-auto p-4 space-y-1">
+      <div data-testid="agent-log-stream" className="bg-black text-green-400 font-mono text-xs min-h-[460px] max-h-[70vh] overflow-auto p-4 space-y-1">
         {logs.length === 0 ? (
           <p className="text-green-300/80">[waiting] no log stream yet...</p>
         ) : (

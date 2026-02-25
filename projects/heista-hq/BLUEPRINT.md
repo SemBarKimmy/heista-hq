@@ -90,8 +90,9 @@
 
 ## 📋 XP Workflow Rules
 1. **Branching:** `feat/*` -> PR to `develop` -> Merge to `master`.
-2. **Tests (di dalam iterasi):** Unit test wajib dibuat di setiap iterasi (XP).
-3. **QA (di luar iterasi):** Martha menjalankan Integration Testing + UAT **setelah merge ke `develop`**.
-4. **Docs / Gate:** **PR tidak boleh di-merge ke `develop` kalau BLUEPRINT.md belum diupdate** (Iteration Log + scope + UAT checklist).
+2. **Tier-1 QA (di dalam iterasi):** Unit test wajib dibuat di setiap iterasi (XP).
+3. **Tier-2 QA (post-merge):** Playwright E2E dijalankan setelah merge ke `develop` (CI push `develop` / scheduled run), target env `https://heista-dev.vercel.app`.
+4. **QA Manual:** Martha menjalankan Integration Testing + UAT **setelah merge ke `develop`**.
+5. **Docs / Gate:** **PR tidak boleh di-merge ke `develop` kalau BLUEPRINT.md belum diupdate** (Iteration Log + scope + UAT checklist).
 
 *Last Updated: 2026-02-25 11:30 WIB*
