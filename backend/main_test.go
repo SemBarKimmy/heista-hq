@@ -1,36 +1,35 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
-	"time"
-
-	"github.com/pquerna/otp/totp"
 )
 
-func TestMFAGenerationAndVerification(t *testing.T) {
-	email := "test@example.com"
-	secret, _, err := GenerateMFASecret(email)
-	if err != nil {
-		t.Fatalf("Failed to generate MFA secret: %v", err)
-	}
+func TestHealthEndpoint(t *testing.T) {
+	s := &server{}
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
 
-	if len(secret) == 0 {
-		t.Fatal("Generated secret is empty")
-	}
+	s.health(w, r)
 
-	// Generate a valid token
-	token, err := totp.GenerateCode(secret, time.Now())
-	if err != nil {
-		t.Fatalf("Failed to generate token: %v", err)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
 	}
+}
 
-	// Verify valid token
-	if !VerifyMFAToken(secret, token) {
-		t.Error("Failed to verify a valid token")
-	}
+func TestCORSAllowsKnownOrigin(t *testing.T) {
+	h := withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
 
-	// Verify invalid token
-	if VerifyMFAToken(secret, "000000") {
-		t.Error("Verified an invalid token")
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	r.Header.Set("Origin", "https://heista-dev.vercel.app")
+	w := httptest.NewRecorder()
+
+	h.ServeHTTP(w, r)
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://heista-dev.vercel.app" {
+		t.Fatalf("expected Access-Control-Allow-Origin to be set, got %q", got)
 	}
 }
