@@ -1,0 +1,7 @@
+0000000000000000000000000000000000000000 a17651f7d4e399ceb5ae2459eb1627fa50a9693b Arga Coder <arga@openclaw.ai> 1771990251 +0700	branch: Created from HEAD
+a17651f7d4e399ceb5ae2459eb1627fa50a9693b 793aa623baea76e4e0072285df4ef6546075b6d5 Arga Coder <arga@openclaw.ai> 1771990329 +0700	commit: feat: iter-6 UI/UX refactor, TrelloBoard fixes, and agent logging
+793aa623baea76e4e0072285df4ef6546075b6d5 6aebe77d645fcf75c92c7fb5d7f8889f06cc78af Arga Coder <arga@openclaw.ai> 1771990581 +0700	commit: docs: rename blueprint and move to project root
+6aebe77d645fcf75c92c7fb5d7f8889f06cc78af 0afeafee9b022c48665781827b172bd0d778697d SemBarKimmy <suryokiminsy@gmail.com> 1771990831 +0700	commit (amend): docs: rename blueprint and move to project root
+0afeafee9b022c48665781827b172bd0d778697d c952260dda4abb69ac71777f50f9d23aa9f50cec Arga OpenClaw <arga@openclaw.ai> 1771990841 +0700	commit (amend): docs: rename blueprint and move to project root
+c952260dda4abb69ac71777f50f9d23aa9f50cec ee84f7f423a6102409c89efd3533986e8cbb008d SemBarKimmy <suryokiminsy@gmail.com> 1771990856 +0700	commit (amend): docs: rename blueprint and move to project root
+ee84f7f423a6102409c89efd3533986e8cbb008d eb892d82123ba03590118bd34bc68eca7f8bdada SemBarKimmy <suryokiminsy@gmail.com> 1771990877 +0700	commit: chore: force deploy
