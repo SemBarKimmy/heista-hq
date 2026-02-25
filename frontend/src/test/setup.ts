@@ -17,6 +17,13 @@ vi.mock('@supabase/supabase-js', () => ({
       delete: vi.fn().mockReturnThis(),
       single: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
     })),
+    channel: vi.fn(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn(),
+    })),
+    removeChannel: vi.fn(),
   })),
 }))
