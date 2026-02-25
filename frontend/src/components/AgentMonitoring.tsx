@@ -16,12 +16,24 @@ interface Log {
 }
 
 export function AgentMonitoring() {
-  const [logs, setLogs] = useState<Log[]>([
-    { id: "1", agent_id: "Arga", level: "info", message: "Starting iteration 4 monitoring", timestamp: new Date().toISOString() },
-    { id: "2", agent_id: "Codex", level: "success", message: "Schema validated", timestamp: new Date().toISOString() },
-  ])
+  const [logs, setLogs] = useState<Log[]>([])
 
   useEffect(() => {
+    // Initial fetch
+    const fetchLogs = async () => {
+      const { data, error } = await supabase
+        .from('agent_logs')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(100)
+      
+      if (data && !error) {
+        setLogs(data as Log[])
+      }
+    }
+
+    fetchLogs()
+
     // Setup real-time subscription
     const channel = supabase
       .channel('agent-logs')
@@ -41,10 +53,10 @@ export function AgentMonitoring() {
 
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
-      case 'error': return 'bg-red-100 text-red-700 border-red-200'
-      case 'warning': return 'bg-amber-100 text-amber-700 border-amber-200'
-      case 'success': return 'bg-emerald-100 text-emerald-700 border-emerald-200'
-      default: return 'bg-blue-100 text-blue-700 border-blue-200'
+      case 'error': return 'bg-destructive/10 text-destructive border-destructive/20'
+      case 'warning': return 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+      case 'success': return 'bg-primary/10 text-primary border-primary/20'
+      default: return 'bg-secondary/10 text-secondary-foreground border-secondary/20'
     }
   }
 
@@ -57,53 +69,47 @@ export function AgentMonitoring() {
   }
 
   return (
-    <div className="p-6 bg-slate-950 min-h-screen text-slate-200">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-slate-800 rounded-lg">
-              <Terminal className="h-6 w-6 text-emerald-400" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">Agent Monitoring</h1>
-              <p className="text-slate-400 text-sm">Real-time system logs and agent activity</p>
-            </div>
+    <div className="bg-card text-foreground h-full flex flex-col">
+      <div className="p-4 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-muted rounded-lg">
+            <Terminal className="h-5 w-5 text-primary" />
           </div>
-          <div className="flex gap-2">
-             <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-               Live
-             </Badge>
+          <div>
+            <h1 className="text-lg font-bold">Logs</h1>
           </div>
         </div>
-
-        <Card className="bg-slate-900 border-slate-800">
-          <CardHeader className="border-b border-slate-800 p-4">
-            <CardTitle className="text-lg font-medium">System Logs</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-[600px] w-full">
-              <div className="divide-y divide-slate-800">
-                {logs.map((log) => (
-                  <div key={log.id} className="p-4 flex gap-4 hover:bg-slate-800/50 transition-colors">
-                    <div className="text-slate-500 text-xs font-mono pt-1 whitespace-nowrap">
-                      {new Date(log.timestamp).toLocaleTimeString()}
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className={`text-[10px] uppercase font-bold px-1.5 py-0 ${getLevelColor(log.level)}`}>
-                          {log.level}
-                        </Badge>
-                        <span className="text-emerald-400 text-sm font-mono">{log.agent_id}</span>
-                      </div>
-                      <p className="text-sm text-slate-300 font-mono leading-relaxed">{log.message}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 animate-pulse">
+          Live
+        </Badge>
       </div>
+
+      <ScrollArea className="flex-1 w-full">
+        <div className="divide-y divide-border">
+          {logs.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground text-sm">
+              Waiting for logs...
+            </div>
+          ) : (
+            logs.map((log) => (
+              <div key={log.id} className="p-3 flex gap-3 hover:bg-muted/50 transition-colors">
+                <div className="text-muted-foreground text-[10px] font-mono pt-1 whitespace-nowrap">
+                  {new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={`text-[9px] uppercase font-bold px-1.5 py-0 ${getLevelColor(log.level)}`}>
+                      {log.level}
+                    </Badge>
+                    <span className="text-primary text-xs font-mono font-semibold">{log.agent_id}</span>
+                  </div>
+                  <p className="text-xs text-foreground font-mono leading-relaxed break-words">{log.message}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </ScrollArea>
     </div>
   )
 }

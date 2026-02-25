@@ -3,12 +3,15 @@
 import React, { useState, useEffect } from "react"
 import {
   DndContext,
-  closestCenter,
+  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverEvent,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
 } from "@dnd-kit/core"
 import {
   arrayMove,
@@ -20,14 +23,15 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Plus, Trash2, GripVertical } from "lucide-react"
+import { Plus, GripVertical } from "lucide-react"
+import { boardApi } from "@/lib/api"
 
 interface Task {
   id: string
   title: string
   description?: string
   column_id: string
+  order: number
 }
 
 interface Column {
@@ -38,10 +42,11 @@ interface Column {
 
 export function TrelloBoard() {
   const [columns, setColumns] = useState<Column[]>([
-    { id: "col-1", title: "To Do", tasks: [{ id: "task-1", title: "Setup Project", column_id: "col-1" }] },
+    { id: "col-1", title: "To Do", tasks: [] },
     { id: "col-2", title: "In Progress", tasks: [] },
     { id: "col-3", title: "Done", tasks: [] },
   ])
+  const [activeTask, setActiveTask] = useState<Task | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -50,42 +55,119 @@ export function TrelloBoard() {
     })
   )
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
+  useEffect(() => {
+    const fetchData = async () => {
+      const colIds = columns.map(c => c.id)
+      const { data, error } = await boardApi.getTasks(colIds)
+      if (data && !error) {
+        setColumns(prev => prev.map(col => ({
+          ...col,
+          tasks: data.filter((t: any) => t.column_id === col.id).sort((a: any, b: any) => a.order - b.order)
+        })))
+      }
+    }
+    fetchData()
+  }, [])
 
-    if (over && active.id !== over.id) {
-      // Basic sorting logic (simplification for MVP)
-      setColumns((items) => {
-        // Find which column the task belongs to and reorder within it
-        // Note: Cross-column drag needs more complex logic
-        return items.map(col => {
-          const taskIds = col.tasks.map(t => t.id)
-          if (taskIds.includes(active.id as string)) {
-            const oldIndex = taskIds.indexOf(active.id as string)
-            const newIndex = taskIds.indexOf(over.id as string)
-            return {
-              ...col,
-              tasks: arrayMove(col.tasks, oldIndex, newIndex)
-            }
-          }
+  const findColumn = (id: string) => {
+    if (columns.some(col => col.id === id)) return columns.find(col => col.id === id)
+    return columns.find(col => col.tasks.some(t => t.id === id))
+  }
+
+  const handleDragStart = (event: any) => {
+    const { active } = event
+    const task = columns.flatMap(c => c.tasks).find(t => t.id === active.id)
+    if (task) setActiveTask(task)
+  }
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event
+    if (!over) return
+
+    const activeId = active.id as string
+    const overId = over.id as string
+
+    const activeColumn = findColumn(activeId)
+    const overColumn = findColumn(overId)
+
+    if (!activeColumn || !overColumn || activeColumn.id === overColumn.id) return
+
+    setColumns(prev => {
+      const activeItems = [...activeColumn.tasks]
+      const overItems = [...overColumn.tasks]
+
+      const activeIndex = activeItems.findIndex(t => t.id === activeId)
+      const overIndex = overColumn.id === overId ? overItems.length : overItems.findIndex(t => t.id === overId)
+
+      const [removed] = activeItems.splice(activeIndex, 1)
+      removed.column_id = overColumn.id
+      overItems.splice(overIndex, 0, removed)
+
+      return prev.map(col => {
+        if (col.id === activeColumn.id) return { ...col, tasks: activeItems }
+        if (col.id === overColumn.id) return { ...col, tasks: overItems }
+        return col
+      })
+    })
+  }
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveTask(null)
+
+    if (!over) return
+
+    const activeId = active.id as string
+    const overId = over.id as string
+
+    const activeColumn = findColumn(activeId)
+    const overColumn = findColumn(overId)
+
+    if (!activeColumn || !overColumn) return
+
+    if (activeId !== overId) {
+      setColumns(prev => {
+        const activeIndex = activeColumn.tasks.findIndex(t => t.id === activeId)
+        const overIndex = overColumn.tasks.findIndex(t => t.id === overId)
+
+        let newTasks = [...overColumn.tasks]
+        if (activeColumn.id === overColumn.id) {
+          newTasks = arrayMove(overColumn.tasks, activeIndex, overIndex)
+        }
+
+        return prev.map(col => {
+          if (col.id === overColumn.id) return { ...col, tasks: newTasks }
           return col
         })
       })
     }
+
+    // Sync to DB
+    const finalCol = findColumn(activeId)
+    if (finalCol) {
+      const task = finalCol.tasks.find(t => t.id === activeId)
+      const index = finalCol.tasks.findIndex(t => t.id === activeId)
+      if (task) {
+        await boardApi.updateTaskOrder(activeId, finalCol.id, index)
+        // Ideally sync all task orders in that column, but keeping it simple for now
+      }
+    }
   }
 
   return (
-    <div className="flex gap-4 p-4 h-full overflow-x-auto bg-slate-50 min-h-screen">
+    <div className="flex gap-4 p-4 h-full overflow-x-auto bg-muted/30 min-h-[500px]">
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         {columns.map((column) => (
           <div key={column.id} className="w-80 flex-shrink-0">
-            <Card className="bg-slate-100 border-none shadow-sm h-fit">
+            <Card className="bg-muted border-none shadow-none h-fit">
               <CardHeader className="p-3 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-bold text-slate-700">{column.title}</CardTitle>
+                <CardTitle className="text-sm font-bold text-foreground">{column.title}</CardTitle>
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                   <Plus className="h-4 w-4" />
                 </Button>
@@ -95,14 +177,14 @@ export function TrelloBoard() {
                   items={column.tasks.map(t => t.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="space-y-2">
+                  <div className="space-y-2 min-h-[10px]">
                     {column.tasks.map((task) => (
                       <SortableTask key={task.id} task={task} />
                     ))}
                   </div>
                 </SortableContext>
                 <div className="mt-2">
-                   <Button variant="ghost" className="w-full justify-start text-slate-500 text-xs hover:bg-slate-200 h-8">
+                   <Button variant="ghost" className="w-full justify-start text-muted-foreground text-xs hover:bg-accent h-8">
                      <Plus className="h-3 w-3 mr-2" /> Add a card
                    </Button>
                 </div>
@@ -110,9 +192,21 @@ export function TrelloBoard() {
             </Card>
           </div>
         ))}
-        <Button variant="outline" className="w-80 flex-shrink-0 bg-white/50 border-dashed">
-          <Plus className="h-4 w-4 mr-2" /> Add another list
-        </Button>
+        <DragOverlay dropAnimation={{
+          sideEffects: defaultDropAnimationSideEffects({
+            styles: {
+              active: {
+                opacity: "0.5",
+              },
+            },
+          }),
+        }}>
+          {activeTask ? (
+            <div className="bg-card p-3 rounded-md shadow-lg border border-border w-80">
+              <p className="text-sm text-foreground">{activeTask.title}</p>
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </div>
   )
@@ -131,21 +225,21 @@ function SortableTask({ task }: { task: Task }) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.3 : 1,
   }
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="bg-white p-3 rounded-md shadow-sm border border-slate-200 group relative"
+      className="bg-card p-3 rounded-md shadow-sm border border-border group relative"
     >
       <div className="flex items-start gap-2">
-        <div {...attributes} {...listeners} className="cursor-grab pt-1 text-slate-400 opacity-0 group-hover:opacity-100">
+        <div {...attributes} {...listeners} className="cursor-grab pt-1 text-muted-foreground opacity-0 group-hover:opacity-100">
            <GripVertical className="h-4 w-4" />
         </div>
         <div className="flex-1">
-          <p className="text-sm text-slate-700">{task.title}</p>
+          <p className="text-sm text-foreground">{task.title}</p>
         </div>
       </div>
     </div>
