@@ -1,11 +1,22 @@
-const DEFAULT_API_URL = 'https://api-dev.heista.danuseta.my.id'
+const REQUIRED_API_URL = 'https://api-dev.heista.danuseta.my.id'
 
-function normalizeBaseUrl(url?: string) {
-  const value = (url || DEFAULT_API_URL).trim()
+function normalizeRequiredBaseUrl(url?: string) {
+  const value = (url || '').trim()
+
+  if (!value) {
+    throw new Error(
+      `Missing NEXT_PUBLIC_API_URL. Set it to ${REQUIRED_API_URL} (or the correct deployed backend URL).`
+    )
+  }
+
+  if (value.includes('localhost:54321')) {
+    throw new Error('Invalid NEXT_PUBLIC_API_URL: localhost:54321 is not allowed for UAT/deployment.')
+  }
+
   return value.endsWith('/') ? value.slice(0, -1) : value
 }
 
-export const API_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL)
+export const API_BASE_URL = normalizeRequiredBaseUrl(process.env.NEXT_PUBLIC_API_URL)
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
