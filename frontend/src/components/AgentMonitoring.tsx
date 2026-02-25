@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { logsApi } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
 import { Terminal } from "lucide-react"
 
@@ -17,16 +18,13 @@ export function AgentMonitoring() {
 
   useEffect(() => {
     const fetchLogs = async () => {
-      const { data, error } = await supabase
-        .from("agent_logs")
-        .select("*")
-        .order("timestamp", { ascending: false })
-        .limit(100)
-
+      const { data, error } = await logsApi.getLogs(100)
       if (data && !error) setLogs(data as Log[])
     }
 
     fetchLogs()
+
+    if (!supabase) return
 
     const channel = supabase
       .channel("agent-logs")
