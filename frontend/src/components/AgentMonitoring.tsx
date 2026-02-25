@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react"
 import { logsApi } from "@/lib/api"
-import { supabase } from "@/lib/supabase"
 import { Terminal } from "lucide-react"
 
 interface Log {
@@ -13,32 +12,26 @@ interface Log {
   timestamp: string
 }
 
+const POLL_INTERVAL_MS = 5000
+
 export function AgentMonitoring() {
   const [logs, setLogs] = useState<Log[]>([])
 
   useEffect(() => {
+    let isMounted = true
+
     const fetchLogs = async () => {
       const { data, error } = await logsApi.getLogs(100)
-      if (data && !error) setLogs(data as Log[])
+      if (!isMounted || error || !data) return
+      setLogs(data as Log[])
     }
 
     fetchLogs()
-
-    if (!supabase) return
-
-    const channel = supabase
-      .channel("agent-logs")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "agent_logs" },
-        (payload) => {
-          setLogs((prev) => [payload.new as Log, ...prev].slice(0, 100))
-        }
-      )
-      .subscribe()
+    const intervalId = window.setInterval(fetchLogs, POLL_INTERVAL_MS)
 
     return () => {
-      supabase.removeChannel(channel)
+      isMounted = false
+      window.clearInterval(intervalId)
     }
   }, [])
 

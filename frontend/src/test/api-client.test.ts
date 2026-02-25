@@ -6,7 +6,8 @@ describe('api-client', () => {
     vi.restoreAllMocks()
   })
 
-  it('uses NEXT_PUBLIC_API_URL (or non-localhost default) as base URL', () => {
+  it('uses NEXT_PUBLIC_API_URL and never localhost', () => {
+    expect(API_BASE_URL).toBe(process.env.NEXT_PUBLIC_API_URL)
     expect(API_BASE_URL.startsWith('http')).toBe(true)
     expect(API_BASE_URL.includes('localhost')).toBe(false)
   })
