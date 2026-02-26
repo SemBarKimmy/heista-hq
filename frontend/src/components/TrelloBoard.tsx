@@ -225,7 +225,7 @@ export function TrelloBoard() {
         }
         return col
       }))
-      logActivity(`Failed to add task: ${error?.message}`, 'ERROR')
+      logActivity(`Failed to add task: ${(error as any)?.message || 'Unknown error'}`, 'ERROR')
     }
   }
 
