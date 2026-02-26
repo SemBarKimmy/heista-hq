@@ -4,9 +4,8 @@ function normalizeRequiredBaseUrl(url?: string) {
   const value = (url || '').trim()
 
   if (!value) {
-    throw new Error(
-      `Missing NEXT_PUBLIC_API_URL. Set it to ${REQUIRED_API_URL} (or the correct deployed backend URL).`
-    )
+    console.warn(`Missing NEXT_PUBLIC_API_URL. Falling back to ${REQUIRED_API_URL}`)
+    return REQUIRED_API_URL
   }
 
   if (value.includes('localhost:54321')) {
