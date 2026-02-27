@@ -42,6 +42,7 @@
 | 7 (v2) | UI/UX refactor total (Top Nav, Bento Dashboard, Mobile-first, no gradients) + auto-update feed 2 jam | Branch: `feat/v2-foundation` | done |
 | 8 (v2) | Monitoring & Feeds split: `/monitor` + raw `/logs` + data adapters dashboard + unit tests | PR: https://github.com/SemBarKimmy/heista-hq/pull/3 | merged |
 | 9 (v2) | `/tasks` page as full board + floating centered top nav + mobile drawer polish + route tests | Branch: `feat/v2-tasks-nav` | running |
+| 10 (ops) | Swarm runner + .clawdbot registry (tmux runner, templates, docs) | Branch: `feat/swarm-runner` | running |
 
 ---
 
@@ -121,4 +122,4 @@
 - Vercel Git auto deployment harus **OFF** (deploy source of truth = GitHub Actions).
 - Release version bump via `.github/workflows/version-bump.yml` + `VERSION` file.
 
-*Last Updated: 2026-02-25 20:33 WIB*
+*Last Updated: 2026-02-28 03:16 WIB*
