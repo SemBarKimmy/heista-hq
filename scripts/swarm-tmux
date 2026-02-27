@@ -1,0 +1,270 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REGISTRY_DIR="${SWARM_REGISTRY_DIR:-$ROOT_DIR/.clawdbot}"
+RUNS_DIR="$REGISTRY_DIR/runs"
+TEMPLATES_DIR="$REGISTRY_DIR/templates"
+
+mkdir -p "$RUNS_DIR" "$TEMPLATES_DIR" "$REGISTRY_DIR/docs"
+
+usage() {
+  cat <<'EOH'
+swarm-tmux - tmux-based swarm runner
+
+Usage:
+  scripts/swarm-tmux init
+  scripts/swarm-tmux templates
+  scripts/swarm-tmux start [--name NAME] [--template TEMPLATE] [--cwd DIR] [--command CMD] [--notes TEXT]
+  scripts/swarm-tmux list
+  scripts/swarm-tmux status <run-name>
+  scripts/swarm-tmux attach <run-name>
+  scripts/swarm-tmux stop <run-name>
+
+Examples:
+  scripts/swarm-tmux init
+  scripts/swarm-tmux start --template default
+  scripts/swarm-tmux start --name frontend-fix --cwd frontend --command "npm run dev"
+  scripts/swarm-tmux attach swarm-20260228-0315
+
+Notes:
+  - No run data is deleted by default.
+  - Each run stores metadata/logs under .clawdbot/runs/<run-name>/.
+EOH
+}
+
+err() { echo "[swarm-tmux] $*" >&2; }
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || { err "Missing required command: $1"; exit 1; }
+}
+
+default_name() { echo "swarm-$(date +"%Y%m%d-%H%M")"; }
+
+resolve_cwd() {
+  local in="$1"
+  if [[ "$in" = /* ]]; then
+    echo "$in"
+  else
+    echo "$ROOT_DIR/$in"
+  fi
+}
+
+template_file() {
+  local name="$1"
+  echo "$TEMPLATES_DIR/$name.env"
+}
+
+load_template() {
+  local name="$1"
+  local file
+  file="$(template_file "$name")"
+  [[ -f "$file" ]] || { err "Template '$name' not found at $file"; exit 1; }
+  # shellcheck disable=SC1090
+  source "$file"
+}
+
+cmd_init() {
+  local default_tpl
+  default_tpl="$(template_file default)"
+
+  mkdir -p "$RUNS_DIR" "$TEMPLATES_DIR" "$REGISTRY_DIR/docs"
+
+  if [[ ! -f "$default_tpl" ]]; then
+    cat >"$default_tpl" <<'EOI'
+# Swarm template format (bash env file)
+# Required:
+#   SWARM_COMMAND="..."
+# Optional:
+#   SWARM_CWD="."    # relative to repo root or absolute path
+#   SWARM_NOTES="..."
+
+SWARM_COMMAND="bash"
+SWARM_CWD="."
+SWARM_NOTES="Default interactive swarm shell"
+EOI
+    echo "Created template: $default_tpl"
+  else
+    echo "Template already exists: $default_tpl"
+  fi
+
+  echo "Registry ready: $REGISTRY_DIR"
+}
+
+cmd_templates() {
+  local found=0
+  shopt -s nullglob
+  for f in "$TEMPLATES_DIR"/*.env; do
+    found=1
+    basename "$f" .env
+  done
+  shopt -u nullglob
+
+  if [[ "$found" -eq 0 ]]; then
+    echo "No templates found in $TEMPLATES_DIR"
+  fi
+}
+
+cmd_start() {
+  need_cmd tmux
+
+  local name=""
+  local template=""
+  local cwd=""
+  local command=""
+  local notes=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name) name="$2"; shift 2 ;;
+      --template) template="$2"; shift 2 ;;
+      --cwd) cwd="$2"; shift 2 ;;
+      --command) command="$2"; shift 2 ;;
+      --notes) notes="$2"; shift 2 ;;
+      *) err "Unknown argument: $1"; usage; exit 1 ;;
+    esac
+  done
+
+  if [[ -n "$template" ]]; then
+    SWARM_COMMAND=""
+    SWARM_CWD=""
+    SWARM_NOTES=""
+    load_template "$template"
+    [[ -n "$command" ]] || command="${SWARM_COMMAND:-}"
+    [[ -n "$cwd" ]] || cwd="${SWARM_CWD:-.}"
+    [[ -n "$notes" ]] || notes="${SWARM_NOTES:-}"
+  fi
+
+  [[ -n "$command" ]] || { err "Missing --command or --template"; exit 1; }
+  [[ -n "$cwd" ]] || cwd="."
+  [[ -n "$name" ]] || name="$(default_name)"
+
+  local run_dir="$RUNS_DIR/$name"
+  [[ ! -e "$run_dir" ]] || { err "Run '$name' already exists at $run_dir"; exit 1; }
+
+  local abs_cwd
+  abs_cwd="$(resolve_cwd "$cwd")"
+  [[ -d "$abs_cwd" ]] || { err "CWD does not exist: $abs_cwd"; exit 1; }
+
+  mkdir -p "$run_dir"
+  local log_file="$run_dir/tmux.log"
+  local meta_file="$run_dir/metadata.env"
+
+  cat >"$meta_file" <<EOM
+RUN_NAME="$name"
+SESSION_NAME="$name"
+STARTED_AT="$(date -Iseconds)"
+ROOT_DIR="$ROOT_DIR"
+RUN_DIR="$run_dir"
+CWD="$abs_cwd"
+COMMAND="$command"
+TEMPLATE="${template:-}"
+NOTES="$notes"
+LOG_FILE="$log_file"
+EOM
+
+  tmux new-session -d -s "$name" -c "$abs_cwd" "$command"
+  tmux pipe-pane -o -t "$name":0.0 "cat >> '$log_file'"
+
+  echo "Started swarm run: $name"
+  echo "  session : $name"
+  echo "  cwd     : $abs_cwd"
+  echo "  command : $command"
+  echo "  meta    : $meta_file"
+  echo "  log     : $log_file"
+  echo "Attach with: scripts/swarm-tmux attach $name"
+}
+
+cmd_list() {
+  shopt -s nullglob
+  local dirs=("$RUNS_DIR"/*)
+  shopt -u nullglob
+
+  if [[ ${#dirs[@]} -eq 0 ]]; then
+    echo "No runs found in $RUNS_DIR"
+    return 0
+  fi
+
+  printf "%-24s %-8s %-25s %s\n" "RUN" "LIVE" "STARTED" "COMMAND"
+  for d in "${dirs[@]}"; do
+    [[ -d "$d" ]] || continue
+    local meta="$d/metadata.env"
+    local run_name started command live
+    run_name="$(basename "$d")"
+    started="-"
+    command="-"
+    live="no"
+
+    if [[ -f "$meta" ]]; then
+      # shellcheck disable=SC1090
+      source "$meta"
+      started="${STARTED_AT:-$started}"
+      command="${COMMAND:-$command}"
+      if tmux has-session -t "${SESSION_NAME:-$run_name}" 2>/dev/null; then
+        live="yes"
+      fi
+    fi
+
+    printf "%-24s %-8s %-25s %s\n" "$run_name" "$live" "$started" "$command"
+  done
+}
+
+cmd_status() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || { err "status requires <run-name>"; exit 1; }
+
+  local meta="$RUNS_DIR/$name/metadata.env"
+  [[ -f "$meta" ]] || { err "No metadata found for run '$name'"; exit 1; }
+  cat "$meta"
+
+  if tmux has-session -t "$name" 2>/dev/null; then
+    echo "LIVE=yes"
+  else
+    echo "LIVE=no"
+  fi
+}
+
+cmd_attach() {
+  need_cmd tmux
+  local name="${1:-}"
+  [[ -n "$name" ]] || { err "attach requires <run-name>"; exit 1; }
+  exec tmux attach-session -t "$name"
+}
+
+cmd_stop() {
+  need_cmd tmux
+  local name="${1:-}"
+  [[ -n "$name" ]] || { err "stop requires <run-name>"; exit 1; }
+
+  local run_dir="$RUNS_DIR/$name"
+  local meta="$run_dir/metadata.env"
+
+  if tmux has-session -t "$name" 2>/dev/null; then
+    tmux kill-session -t "$name"
+    echo "Stopped session: $name"
+  else
+    echo "Session not live: $name"
+  fi
+
+  if [[ -f "$meta" ]] && ! grep -q '^ENDED_AT=' "$meta"; then
+    echo "ENDED_AT=\"$(date -Iseconds)\"" >> "$meta"
+  fi
+
+  echo "Run data preserved at: $run_dir"
+}
+
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    init) shift; cmd_init "$@" ;;
+    templates) shift; cmd_templates "$@" ;;
+    start) shift; cmd_start "$@" ;;
+    list) shift; cmd_list "$@" ;;
+    status) shift; cmd_status "$@" ;;
+    attach) shift; cmd_attach "$@" ;;
+    stop) shift; cmd_stop "$@" ;;
+    -h|--help|help|"") usage ;;
+    *) err "Unknown command: $cmd"; usage; exit 1 ;;
+  esac
+}
+
+main "$@"
