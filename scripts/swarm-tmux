@@ -40,6 +40,10 @@ need_cmd() {
 
 default_name() { echo "swarm-$(date +"%Y%m%d-%H%M")"; }
 
+valid_name() {
+  [[ "$1" =~ ^[a-zA-Z0-9._-]+$ ]]
+}
+
 resolve_cwd() {
   local in="$1"
   if [[ "$in" = /* ]]; then
@@ -54,13 +58,169 @@ template_file() {
   echo "$TEMPLATES_DIR/$name.env"
 }
 
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+is_allowed_key() {
+  local key="$1"
+  shift
+  local allowed
+  for allowed in "$@"; do
+    [[ "$key" == "$allowed" ]] && return 0
+  done
+  return 1
+}
+
+decode_escaped_value() {
+  local v="$1"
+  v="${v//\\n/$'\n'}"
+  v="${v//\\\"/\"}"
+  v="${v//\\\\/\\}"
+  printf '%s' "$v"
+}
+
+parse_key_value_file() {
+  local file="$1"
+  shift
+  local allowed=("$@")
+  local line raw key value
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    raw="$(trim "$line")"
+    [[ -z "$raw" || "${raw:0:1}" == "#" ]] && continue
+
+    if [[ ! "$raw" =~ ^([A-Z_][A-Z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+      err "Invalid line in $file: $line"
+      exit 1
+    fi
+
+    key="${BASH_REMATCH[1]}"
+    value="$(trim "${BASH_REMATCH[2]}")"
+
+    if ! is_allowed_key "$key" "${allowed[@]}"; then
+      err "Unexpected key '$key' in $file"
+      exit 1
+    fi
+
+    if [[ "$value" =~ ^"(.*)"$ ]]; then
+      value="${BASH_REMATCH[1]}"
+      value="$(decode_escaped_value "$value")"
+    fi
+
+    case "$key" in
+      SWARM_COMMAND) SWARM_COMMAND="$value" ;;
+      SWARM_CWD) SWARM_CWD="$value" ;;
+      SWARM_NOTES) SWARM_NOTES="$value" ;;
+      RUN_NAME) META_RUN_NAME="$value" ;;
+      SESSION_NAME) META_SESSION_NAME="$value" ;;
+      STARTED_AT) META_STARTED_AT="$value" ;;
+      ROOT_DIR) META_ROOT_DIR="$value" ;;
+      RUN_DIR) META_RUN_DIR="$value" ;;
+      CWD) META_CWD="$value" ;;
+      COMMAND) META_COMMAND="$value" ;;
+      TEMPLATE) META_TEMPLATE="$value" ;;
+      NOTES) META_NOTES="$value" ;;
+      LOG_FILE) META_LOG_FILE="$value" ;;
+      ENDED_AT) META_ENDED_AT="$value" ;;
+    esac
+  done <"$file"
+}
+
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+kv_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  printf '%s' "$s"
+}
+
+write_metadata() {
+  local run_dir="$1"
+  local json_file="$run_dir/metadata.json"
+  local kv_file="$run_dir/metadata.env"
+
+  if command -v jq >/dev/null 2>&1; then
+    jq -n \
+      --arg run_name "$META_RUN_NAME" \
+      --arg session_name "$META_SESSION_NAME" \
+      --arg started_at "$META_STARTED_AT" \
+      --arg root_dir "$META_ROOT_DIR" \
+      --arg run_dir "$META_RUN_DIR" \
+      --arg cwd "$META_CWD" \
+      --arg command "$META_COMMAND" \
+      --arg template "$META_TEMPLATE" \
+      --arg notes "$META_NOTES" \
+      --arg log_file "$META_LOG_FILE" \
+      --arg ended_at "$META_ENDED_AT" \
+      '{run_name:$run_name,session_name:$session_name,started_at:$started_at,root_dir:$root_dir,run_dir:$run_dir,cwd:$cwd,command:$command,template:$template,notes:$notes,log_file:$log_file,ended_at:$ended_at}' \
+      >"$json_file"
+  else
+    cat >"$json_file" <<EOJ
+{"run_name":"$(json_escape "$META_RUN_NAME")","session_name":"$(json_escape "$META_SESSION_NAME")","started_at":"$(json_escape "$META_STARTED_AT")","root_dir":"$(json_escape "$META_ROOT_DIR")","run_dir":"$(json_escape "$META_RUN_DIR")","cwd":"$(json_escape "$META_CWD")","command":"$(json_escape "$META_COMMAND")","template":"$(json_escape "$META_TEMPLATE")","notes":"$(json_escape "$META_NOTES")","log_file":"$(json_escape "$META_LOG_FILE")","ended_at":"$(json_escape "$META_ENDED_AT")"}
+EOJ
+  fi
+
+  cat >"$kv_file" <<EOK
+RUN_NAME="$(kv_escape "$META_RUN_NAME")"
+SESSION_NAME="$(kv_escape "$META_SESSION_NAME")"
+STARTED_AT="$(kv_escape "$META_STARTED_AT")"
+ROOT_DIR="$(kv_escape "$META_ROOT_DIR")"
+RUN_DIR="$(kv_escape "$META_RUN_DIR")"
+CWD="$(kv_escape "$META_CWD")"
+COMMAND="$(kv_escape "$META_COMMAND")"
+TEMPLATE="$(kv_escape "$META_TEMPLATE")"
+NOTES="$(kv_escape "$META_NOTES")"
+LOG_FILE="$(kv_escape "$META_LOG_FILE")"
+ENDED_AT="$(kv_escape "$META_ENDED_AT")"
+EOK
+}
+
 load_template() {
   local name="$1"
   local file
   file="$(template_file "$name")"
   [[ -f "$file" ]] || { err "Template '$name' not found at $file"; exit 1; }
-  # shellcheck disable=SC1090
-  source "$file"
+
+  SWARM_COMMAND=""
+  SWARM_CWD=""
+  SWARM_NOTES=""
+  parse_key_value_file "$file" SWARM_COMMAND SWARM_CWD SWARM_NOTES
+}
+
+reset_meta() {
+  META_RUN_NAME=""
+  META_SESSION_NAME=""
+  META_STARTED_AT=""
+  META_ROOT_DIR=""
+  META_RUN_DIR=""
+  META_CWD=""
+  META_COMMAND=""
+  META_TEMPLATE=""
+  META_NOTES=""
+  META_LOG_FILE=""
+  META_ENDED_AT=""
+}
+
+load_run_metadata() {
+  local run_dir="$1"
+  local kv_file="$run_dir/metadata.env"
+  reset_meta
+  [[ -f "$kv_file" ]] || return 1
+  parse_key_value_file "$kv_file" RUN_NAME SESSION_NAME STARTED_AT ROOT_DIR RUN_DIR CWD COMMAND TEMPLATE NOTES LOG_FILE ENDED_AT
 }
 
 cmd_init() {
@@ -71,7 +231,7 @@ cmd_init() {
 
   if [[ ! -f "$default_tpl" ]]; then
     cat >"$default_tpl" <<'EOI'
-# Swarm template format (bash env file)
+# Swarm template format (KEY=VALUE)
 # Required:
 #   SWARM_COMMAND="..."
 # Optional:
@@ -93,6 +253,7 @@ EOI
 cmd_templates() {
   local found=0
   shopt -s nullglob
+  local f
   for f in "$TEMPLATES_DIR"/*.env; do
     found=1
     basename "$f" .env
@@ -125,9 +286,6 @@ cmd_start() {
   done
 
   if [[ -n "$template" ]]; then
-    SWARM_COMMAND=""
-    SWARM_CWD=""
-    SWARM_NOTES=""
     load_template "$template"
     [[ -n "$command" ]] || command="${SWARM_COMMAND:-}"
     [[ -n "$cwd" ]] || cwd="${SWARM_CWD:-.}"
@@ -137,6 +295,7 @@ cmd_start() {
   [[ -n "$command" ]] || { err "Missing --command or --template"; exit 1; }
   [[ -n "$cwd" ]] || cwd="."
   [[ -n "$name" ]] || name="$(default_name)"
+  valid_name "$name" || { err "Invalid --name '$name' (allowed: ^[a-zA-Z0-9._-]+$)"; exit 1; }
 
   local run_dir="$RUNS_DIR/$name"
   [[ ! -e "$run_dir" ]] || { err "Run '$name' already exists at $run_dir"; exit 1; }
@@ -147,20 +306,21 @@ cmd_start() {
 
   mkdir -p "$run_dir"
   local log_file="$run_dir/tmux.log"
-  local meta_file="$run_dir/metadata.env"
 
-  cat >"$meta_file" <<EOM
-RUN_NAME="$name"
-SESSION_NAME="$name"
-STARTED_AT="$(date -Iseconds)"
-ROOT_DIR="$ROOT_DIR"
-RUN_DIR="$run_dir"
-CWD="$abs_cwd"
-COMMAND="$command"
-TEMPLATE="${template:-}"
-NOTES="$notes"
-LOG_FILE="$log_file"
-EOM
+  reset_meta
+  META_RUN_NAME="$name"
+  META_SESSION_NAME="$name"
+  META_STARTED_AT="$(date -Iseconds)"
+  META_ROOT_DIR="$ROOT_DIR"
+  META_RUN_DIR="$run_dir"
+  META_CWD="$abs_cwd"
+  META_COMMAND="$command"
+  META_TEMPLATE="${template:-}"
+  META_NOTES="$notes"
+  META_LOG_FILE="$log_file"
+  META_ENDED_AT=""
+
+  write_metadata "$run_dir"
 
   tmux new-session -d -s "$name" -c "$abs_cwd" "$command"
   tmux pipe-pane -o -t "$name":0.0 "cat >> '$log_file'"
@@ -169,7 +329,7 @@ EOM
   echo "  session : $name"
   echo "  cwd     : $abs_cwd"
   echo "  command : $command"
-  echo "  meta    : $meta_file"
+  echo "  meta    : $run_dir/metadata.json"
   echo "  log     : $log_file"
   echo "Attach with: scripts/swarm-tmux attach $name"
 }
@@ -185,21 +345,20 @@ cmd_list() {
   fi
 
   printf "%-24s %-8s %-25s %s\n" "RUN" "LIVE" "STARTED" "COMMAND"
+  local d run_name started command live session
   for d in "${dirs[@]}"; do
     [[ -d "$d" ]] || continue
-    local meta="$d/metadata.env"
-    local run_name started command live
     run_name="$(basename "$d")"
     started="-"
     command="-"
     live="no"
+    session="$run_name"
 
-    if [[ -f "$meta" ]]; then
-      # shellcheck disable=SC1090
-      source "$meta"
-      started="${STARTED_AT:-$started}"
-      command="${COMMAND:-$command}"
-      if tmux has-session -t "${SESSION_NAME:-$run_name}" 2>/dev/null; then
+    if load_run_metadata "$d"; then
+      started="${META_STARTED_AT:-$started}"
+      command="${META_COMMAND:-$command}"
+      session="${META_SESSION_NAME:-$session}"
+      if tmux has-session -t "$session" 2>/dev/null; then
         live="yes"
       fi
     fi
@@ -212,9 +371,10 @@ cmd_status() {
   local name="${1:-}"
   [[ -n "$name" ]] || { err "status requires <run-name>"; exit 1; }
 
-  local meta="$RUNS_DIR/$name/metadata.env"
-  [[ -f "$meta" ]] || { err "No metadata found for run '$name'"; exit 1; }
-  cat "$meta"
+  local run_dir="$RUNS_DIR/$name"
+  load_run_metadata "$run_dir" || { err "No metadata found for run '$name'"; exit 1; }
+
+  cat "$run_dir/metadata.json"
 
   if tmux has-session -t "$name" 2>/dev/null; then
     echo "LIVE=yes"
@@ -236,7 +396,7 @@ cmd_stop() {
   [[ -n "$name" ]] || { err "stop requires <run-name>"; exit 1; }
 
   local run_dir="$RUNS_DIR/$name"
-  local meta="$run_dir/metadata.env"
+  load_run_metadata "$run_dir" || { err "No metadata found for run '$name'"; exit 1; }
 
   if tmux has-session -t "$name" 2>/dev/null; then
     tmux kill-session -t "$name"
@@ -245,8 +405,9 @@ cmd_stop() {
     echo "Session not live: $name"
   fi
 
-  if [[ -f "$meta" ]] && ! grep -q '^ENDED_AT=' "$meta"; then
-    echo "ENDED_AT=\"$(date -Iseconds)\"" >> "$meta"
+  if [[ -z "$META_ENDED_AT" ]]; then
+    META_ENDED_AT="$(date -Iseconds)"
+    write_metadata "$run_dir"
   fi
 
   echo "Run data preserved at: $run_dir"
