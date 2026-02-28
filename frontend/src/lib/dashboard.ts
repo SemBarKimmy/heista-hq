@@ -15,6 +15,66 @@ export interface TokenUsageData {
   todo?: string
 }
 
+export interface UsageWindowModelAgg {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost: number
+  calls: number
+}
+
+export interface UsageWindowRecentCall {
+  timestamp: string
+  model: string
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost: number
+  ago: string
+}
+
+export interface UsageWindowsData {
+  source?: string
+  updatedAt: string
+  error?: string
+  fiveHour?: {
+    perModel?: Record<string, UsageWindowModelAgg>
+    windowStart?: string | null
+    windowResetIn?: number
+    recentCalls?: UsageWindowRecentCall[]
+
+    // FE-enriched fields
+    totals?: UsageWindowModelAgg
+    windowResetInLabel?: string
+  }
+  weekly?: {
+    perModel?: Record<string, UsageWindowModelAgg>
+
+    // FE-enriched fields
+    totals?: UsageWindowModelAgg
+  }
+  burnRate?: {
+    tokensPerMinute: number
+    costPerMinute: number
+  }
+}
+
+export interface RateLimitEvent {
+  timestamp: string
+  detail: string
+  provider?: string
+  model?: string
+}
+
+export interface RateLimitEventsData {
+  source?: string
+  updatedAt: string
+  window?: string
+  events?: RateLimitEvent[]
+}
+
 export interface VpsStatusData {
   status: "online" | "degraded" | "offline" | "unknown"
   region: string
@@ -58,8 +118,12 @@ function normalizeBaseUrl(input?: string) {
   return value.endsWith("/") ? value.slice(0, -1) : value
 }
 
+export function getApiBaseUrl() {
+  return normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL)
+}
+
 function endpoint(path: string) {
-  const base = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL)
+  const base = getApiBaseUrl()
   return `${base}${path}`
 }
 
@@ -192,4 +256,47 @@ export function formatWibDateTime(isoString: string): string {
     minute: "2-digit",
     second: "2-digit",
   }).format(dt)
+}
+
+export function formatCompactNumber(value: number): string {
+  const abs = Math.abs(value)
+  if (abs < 1000) return value.toLocaleString()
+  if (abs < 1_000_000) return `${(value / 1000).toFixed(1)}k`
+  if (abs < 1_000_000_000) return `${(value / 1_000_000).toFixed(2)}m`
+  return `${(value / 1_000_000_000).toFixed(2)}b`
+}
+
+export function formatMsAsShort(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "—"
+  const seconds = Math.ceil(ms / 1000)
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  if (m <= 0) return `${s}s`
+  if (m < 60) return `${m}m ${s}s`
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  return `${h}h ${mm}m`
+}
+
+export function summarizeUsageWindow(perModel?: Record<string, UsageWindowModelAgg>): UsageWindowModelAgg {
+  const totals: UsageWindowModelAgg = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+    calls: 0,
+  }
+  if (!perModel) return totals
+  for (const key of Object.keys(perModel)) {
+    const row = perModel[key]
+    if (!row) continue
+    totals.input += row.input ?? 0
+    totals.output += row.output ?? 0
+    totals.cacheRead += row.cacheRead ?? 0
+    totals.cacheWrite += row.cacheWrite ?? 0
+    totals.cost += row.cost ?? 0
+    totals.calls += row.calls ?? 0
+  }
+  return totals
 }
