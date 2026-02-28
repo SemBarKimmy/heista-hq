@@ -90,6 +90,9 @@ func main() {
 	mux.HandleFunc("/api/news", s.news)
 	mux.HandleFunc("/api/trends", s.trends)
 
+	mux.HandleFunc("/api/agents/status", s.agentsStatus)
+	mux.HandleFunc("/api/activity", s.activityTimeline)
+	mux.HandleFunc("/api/gateway/status", s.gatewayStatus)
 	handler := withCORS(withJSONContentType(mux))
 
 	addr := envOrDefault("BIND_ADDR", "127.0.0.1:8080")
@@ -981,4 +984,111 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 	}
+}
+
+// New endpoints for Task #5
+
+func (s *server) agentsStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	// TODO: Integrate with OpenClaw agent status tracking
+	writeJSON(w, http.StatusOK, map[string]any{
+		"source":    "openclaw",
+		"updatedAt": time.Now().UTC().Format(time.RFC3339),
+		"agents": []map[string]any{
+			{
+				"id":      "arga",
+				"name":    "Arga",
+				"status":  "idle",
+				"model":   "github-copilot/claude-haiku-4.5",
+				"taskId":  nil,
+				"busySince": nil,
+			},
+		},
+	})
+}
+
+func (s *server) activityTimeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+
+	if s.db == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"source":    "stub",
+			"updatedAt": time.Now().UTC().Format(time.RFC3339),
+			"events":    []map[string]any{},
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id::text, agent_id, level, message, timestamp
+		FROM public.api_logs
+		ORDER BY timestamp DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	type event struct {
+		ID        string    `json:"id"`
+		AgentID   string    `json:"agent_id"`
+		Action    string    `json:"action"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+
+	events := make([]event, 0)
+	for rows.Next() {
+		var id, agentID, level, message string
+		var ts time.Time
+		if err := rows.Scan(&id, &agentID, &level, &message, &ts); err != nil {
+			continue
+		}
+		events = append(events, event{
+			ID:        id,
+			AgentID:   agentID,
+			Action:    level + ": " + message,
+			Timestamp: ts,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"source":    "database",
+		"updatedAt": time.Now().UTC().Format(time.RFC3339),
+		"events":    events,
+	})
+}
+
+func (s *server) gatewayStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	// TODO: Wire to actual OpenClaw gateway health check
+	writeJSON(w, http.StatusOK, map[string]any{
+		"source":    "endpoint",
+		"updatedAt": time.Now().UTC().Format(time.RFC3339),
+		"status":    "online",
+		"uptime":    "99.9%",
+		"version":   "v1.0.0",
+		"lastCheck": time.Now().UTC().Format(time.RFC3339),
+	})
 }
