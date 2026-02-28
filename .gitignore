@@ -1,0 +1,9 @@
+# Local Vercel metadata (may include env and tokens)
+.vercel/
+
+# Node
+node_modules/
+
+# Build outputs
+.next/
+dist/
