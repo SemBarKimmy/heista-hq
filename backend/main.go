@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -141,22 +143,49 @@ func (s *server) tokenUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hours := envIntOrDefault("TOKEN_USAGE_HOURS_DEFAULT", 24)
+	if v := strings.TrimSpace(r.URL.Query().Get("hours")); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid hours"})
+			return
+		}
+		hours = parsed
+	}
+	if hours > 24*7 {
+		hours = 24 * 7
+	}
+
+	since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
+	openclawAgentsDir := envOrDefault("OPENCLAW_AGENTS_DIR", "/root/.openclaw/agents")
+
+	usedTokens, fileCount, err := sumOpenClawTokens(openclawAgentsDir, since)
+	sourceDetail := "openclaw-sessions-jsonl"
+	if err != nil {
+		log.Printf("token usage scan failed: %v", err)
+		sourceDetail = "openclaw-sessions-jsonl:error"
+		usedTokens = 0
+		fileCount = 0
+	}
+
 	type tokenUsagePayload struct {
-		UsedTokens  int    `json:"usedTokens"`
-		LimitTokens int    `json:"limitTokens"`
-		Period      string `json:"period"`
-		UpdatedAt   string `json:"updatedAt"`
-		Source      string `json:"source"`
-		TODO        string `json:"todo,omitempty"`
+		UsedTokens   int    `json:"usedTokens"`
+		LimitTokens  int    `json:"limitTokens"`
+		Period       string `json:"period"`
+		UpdatedAt    string `json:"updatedAt"`
+		Source       string `json:"source"`
+		SourceDetail string `json:"sourceDetail"`
+		FileCount    int    `json:"fileCount"`
 	}
 
 	payload := tokenUsagePayload{
-		UsedTokens:  envIntOrDefault("TOKEN_USAGE_USED", 0),
-		LimitTokens: envIntOrDefault("TOKEN_USAGE_LIMIT", 0),
-		Period:      envOrDefault("TOKEN_USAGE_PERIOD", "24h"),
-		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
-		Source:      "openclaw",
-		TODO:        "Temporary endpoint: wire real OpenClaw session usage adapter when available.",
+		UsedTokens:   usedTokens,
+		LimitTokens:  envIntOrDefault("TOKEN_USAGE_LIMIT", 0),
+		Period:       fmt.Sprintf("%dh", hours),
+		UpdatedAt:    time.Now().UTC().Format(time.RFC3339),
+		Source:       "openclaw",
+		SourceDetail: sourceDetail,
+		FileCount:    fileCount,
 	}
 
 	writeJSON(w, http.StatusOK, payload)
@@ -168,7 +197,7 @@ func (s *server) vps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cpuPercent := readCPUPercentFromLoad()
+	cpuPercent := readCPUPercent()
 	ramPercent := readRAMPercent()
 	diskPercent := readDiskPercent("/")
 	uptimePercent := 99.9
@@ -431,6 +460,68 @@ func round1(v float64) float64 {
 	return math.Round(v*10) / 10
 }
 
+func readCPUPercent() float64 {
+	stat1, err := readCPUStat()
+	if err != nil {
+		return readCPUPercentFromLoad()
+	}
+	time.Sleep(120 * time.Millisecond)
+	stat2, err := readCPUStat()
+	if err != nil {
+		return readCPUPercentFromLoad()
+	}
+
+	totalDelta := stat2.total - stat1.total
+	idleDelta := stat2.idle - stat1.idle
+	if totalDelta <= 0 {
+		return readCPUPercentFromLoad()
+	}
+	pct := (1 - (idleDelta / totalDelta)) * 100
+	if pct < 0 {
+		return 0
+	}
+	if pct > 100 {
+		return 100
+	}
+	return pct
+}
+
+func readCPUStat() (struct{ total, idle float64 }, error) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return struct{ total, idle float64 }{}, err
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 {
+		return struct{ total, idle float64 }{}, errors.New("missing /proc/stat")
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return struct{ total, idle float64 }{}, errors.New("unexpected /proc/stat format")
+	}
+	vals := make([]float64, 0, len(fields)-1)
+	for _, s := range fields[1:] {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return struct{ total, idle float64 }{}, err
+		}
+		vals = append(vals, v)
+	}
+	total := 0.0
+	for _, v := range vals {
+		total += v
+	}
+	idle := 0.0
+	// idle + iowait
+	if len(vals) >= 4 {
+		idle += vals[3]
+	}
+	if len(vals) >= 5 {
+		idle += vals[4]
+	}
+	return struct{ total, idle float64 }{total: total, idle: idle}, nil
+}
+
 func readCPUPercentFromLoad() float64 {
 	data, err := os.ReadFile("/proc/loadavg")
 	if err != nil {
@@ -504,6 +595,95 @@ func readDiskPercent(path string) float64 {
 		return 100
 	}
 	return used
+}
+
+func sumOpenClawTokens(agentsDir string, since time.Time) (int, int, error) {
+	tokens := 0
+	files := 0
+	// Directory structure: <agentsDir>/<agent>/sessions/<session>.jsonl
+	agentEntries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, agent := range agentEntries {
+		if !agent.IsDir() {
+			continue
+		}
+		sessionsDir := filepath.Join(agentsDir, agent.Name(), "sessions")
+		sessionFiles, err := os.ReadDir(sessionsDir)
+		if err != nil {
+			continue
+		}
+		for _, f := range sessionFiles {
+			if f.IsDir() {
+				continue
+			}
+			name := f.Name()
+			if !strings.HasSuffix(name, ".jsonl") {
+				continue
+			}
+			path := filepath.Join(sessionsDir, name)
+			fileTokens, ok, err := sumTokensInJSONL(path, since)
+			if err != nil {
+				continue
+			}
+			if ok {
+				files++
+			}
+			tokens += fileTokens
+		}
+	}
+	return tokens, files, nil
+}
+
+func sumTokensInJSONL(path string, since time.Time) (int, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, false, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	// allow long lines
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 2*1024*1024)
+
+	tokens := 0
+	counted := false
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		var rec struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			Message   *struct {
+				Usage *struct {
+					TotalTokens int `json:"totalTokens"`
+				} `json:"usage"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(line, &rec); err != nil {
+			continue
+		}
+		if rec.Type != "message" || rec.Message == nil || rec.Message.Usage == nil {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, rec.Timestamp)
+		if err != nil {
+			continue
+		}
+		if ts.Before(since) {
+			continue
+		}
+		if rec.Message.Usage.TotalTokens < 0 {
+			continue
+		}
+		tokens += rec.Message.Usage.TotalTokens
+		counted = true
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, false, err
+	}
+	return tokens, counted, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
