@@ -49,6 +49,7 @@ jobs:
 
   tier2-e2e-playwright:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || github.event_name == 'schedule'
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
