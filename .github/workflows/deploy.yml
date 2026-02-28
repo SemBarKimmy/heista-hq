@@ -4,6 +4,14 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+  push:
+    branches: [develop, master]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: false
+        default: "develop"
 
 permissions:
   contents: read
@@ -11,12 +19,15 @@ permissions:
 
 concurrency:
   # prevent overlapping deploys for same branch/PR
-  group: vercel-${{ github.event.workflow_run.head_branch }}
+  group: vercel-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   deploy:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
     env:
@@ -32,8 +43,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          EVENT='${{ github.event.workflow_run.event }}'
-          BRANCH='${{ github.event.workflow_run.head_branch }}'
+          # Handle workflow_run, push, or workflow_dispatch
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            EVENT='${{ github.event.workflow_run.event }}'
+            BRANCH='${{ github.event.workflow_run.head_branch }}'
+          else
+            EVENT='${{ github.event_name }}'
+            BRANCH='${{ github.ref_name }}'
+          fi
 
           echo "event=$EVENT" >> "$GITHUB_OUTPUT"
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
@@ -66,7 +83,7 @@ jobs:
           fi
 
           # push deployments: only for develop/master
-          if [ "$EVENT" = "push" ] && { [ "$BRANCH" = "develop" ] || [ "$BRANCH" = "master" ]; }; then
+          if { [ "$EVENT" = "push" ] || [ "$EVENT" = "workflow_dispatch" ]; } && { [ "$BRANCH" = "develop" ] || [ "$BRANCH" = "master" ]; }; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             if [ "$BRANCH" = "master" ]; then
               echo "target=production" >> "$GITHUB_OUTPUT"
@@ -88,7 +105,7 @@ jobs:
         if: steps.mode.outputs.deploy == 'true'
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node
         if: steps.mode.outputs.deploy == 'true'
