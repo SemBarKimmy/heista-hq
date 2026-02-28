@@ -46,6 +46,19 @@ describe("dashboard adapters", () => {
     expect(mockFetch).toHaveBeenCalledWith("https://api.example.com/api/token-usage", { cache: "no-store" })
   })
 
+  it("falls back to default API URL when NEXT_PUBLIC_API_URL is missing", async () => {
+    delete process.env.OPENCLAW_TOKEN_USAGE_ENDPOINT
+    delete process.env.NEXT_PUBLIC_API_URL
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ usedTokens: 1, limitTokens: 2, source: "openclaw" }),
+    })
+
+    await getTokenUsage(mockFetch as unknown as typeof fetch)
+    expect(mockFetch).toHaveBeenCalledWith("https://api-dev.heista.danuseta.my.id/api/token-usage", { cache: "no-store" })
+  })
+
   it("maps VPS endpoint response", async () => {
     process.env.VPS_STATUS_ENDPOINT = "https://example.com/vps"
     const mockFetch = vi.fn().mockResolvedValue({

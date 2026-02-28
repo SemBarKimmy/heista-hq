@@ -39,9 +39,11 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+const REQUIRED_API_URL = "https://api-dev.heista.danuseta.my.id"
+
 function normalizeBaseUrl(input?: string) {
   const value = (input || "").trim()
-  if (!value) return ""
+  if (!value) return REQUIRED_API_URL
   return value.endsWith("/") ? value.slice(0, -1) : value
 }
 
