@@ -47,3 +47,12 @@ Set these in repository **Settings -> Secrets and variables -> Actions**:
 - `VERCEL_TOKEN`
 - `VERCEL_ORG_ID`
 - `VERCEL_PROJECT_ID`
+
+## Environment Variables
+
+Set `NEXT_PUBLIC_API_URL` in Vercel / your runtime environment:
+
+- **Develop (dev):** `https://heistadev.danuseta.my.id`
+- **Master (prod):** `https://heista.danuseta.my.id`
+
+If `NEXT_PUBLIC_API_URL` is not set, the frontend falls back to the dev URL.
