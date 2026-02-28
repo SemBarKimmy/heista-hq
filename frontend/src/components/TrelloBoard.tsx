@@ -10,6 +10,7 @@ import {
   useSensors,
   DragEndEvent,
   DragOverEvent,
+  DragStartEvent,
   DragOverlay,
   defaultDropAnimationSideEffects,
 } from "@dnd-kit/core"
@@ -23,8 +24,9 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plus, GripVertical } from "lucide-react"
-import { boardApi } from "@/lib/api"
+import { Plus, GripVertical, Check, X } from "lucide-react"
+import { boardApi, logsApi } from "@/lib/api"
+import { Input } from "@/components/ui/input"
 
 interface Task {
   id: string
@@ -40,13 +42,23 @@ interface Column {
   tasks: Task[]
 }
 
+let tempTaskCounter = 0
+
+const INITIAL_COLUMNS: Column[] = [
+  { id: "col-1", title: "To Do", tasks: [] },
+  { id: "col-2", title: "In Progress", tasks: [] },
+  { id: "col-3", title: "Done", tasks: [] },
+]
+
+const COLUMN_IDS = INITIAL_COLUMNS.map((column) => column.id)
+
+const toTestIdSafe = (value: string) => value.replace(/\s+/g, '-').toLowerCase()
+
 export function TrelloBoard() {
-  const [columns, setColumns] = useState<Column[]>([
-    { id: "col-1", title: "To Do", tasks: [] },
-    { id: "col-2", title: "In Progress", tasks: [] },
-    { id: "col-3", title: "Done", tasks: [] },
-  ])
+  const [columns, setColumns] = useState<Column[]>(INITIAL_COLUMNS)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
+  const [addingToColumn, setAddingToColumn] = useState<string | null>(null)
+  const [newTaskTitle, setNewTaskTitle] = useState("")
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -55,14 +67,28 @@ export function TrelloBoard() {
     })
   )
 
+  const logActivity = async (message: string, level: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' = 'INFO') => {
+    const { error } = await logsApi.addLog({
+      agent_id: 'user-interface',
+      level,
+      message,
+      metadata: { source: 'TrelloBoard' }
+    })
+
+    if (error) {
+      console.error("Failed to log activity:", error)
+    }
+  }
+
   useEffect(() => {
     const fetchData = async () => {
-      const colIds = columns.map(c => c.id)
-      const { data, error } = await boardApi.getTasks(colIds)
+      const { data, error } = await boardApi.getTasks(COLUMN_IDS)
       if (data && !error) {
         setColumns(prev => prev.map(col => ({
           ...col,
-          tasks: data.filter((t: any) => t.column_id === col.id).sort((a: any, b: any) => a.order - b.order)
+          tasks: data
+            .filter((t) => t.column_id === col.id)
+            .sort((a, b) => a.order - b.order)
         })))
       }
     }
@@ -74,7 +100,7 @@ export function TrelloBoard() {
     return columns.find(col => col.tasks.some(t => t.id === id))
   }
 
-  const handleDragStart = (event: any) => {
+  const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
     const task = columns.flatMap(c => c.tasks).find(t => t.id === active.id)
     if (task) setActiveTask(task)
@@ -149,8 +175,57 @@ export function TrelloBoard() {
       const index = finalCol.tasks.findIndex(t => t.id === activeId)
       if (task) {
         await boardApi.updateTaskOrder(activeId, finalCol.id, index)
-        // Ideally sync all task orders in that column, but keeping it simple for now
+        logActivity(`Moved task "${task.title}" to ${finalCol.title}`, 'SUCCESS')
       }
+    }
+  }
+
+  const addTask = async (columnId: string) => {
+    if (!newTaskTitle.trim()) return
+
+    const column = columns.find(c => c.id === columnId)
+    if (!column) return
+
+    const newTask = {
+      title: newTaskTitle,
+      column_id: columnId,
+      order: column.tasks.length
+    }
+
+    // Optimistic update
+    const tempId = `temp-${++tempTaskCounter}`
+    const optimisticTask = { ...newTask, id: tempId }
+    
+    setColumns(prev => prev.map(col => {
+      if (col.id === columnId) {
+        return { ...col, tasks: [...col.tasks, optimisticTask] }
+      }
+      return col
+    }))
+
+    setNewTaskTitle("")
+    setAddingToColumn(null)
+
+    // API call
+    const { data, error } = await boardApi.addTask(newTask)
+    
+    if (data && !error) {
+      setColumns(prev => prev.map(col => {
+        if (col.id === columnId) {
+          return { ...col, tasks: col.tasks.map(t => t.id === tempId ? data : t) }
+        }
+        return col
+      }))
+      logActivity(`Added new task: "${data.title}"`, 'SUCCESS')
+    } else {
+      // Rollback on error
+      setColumns(prev => prev.map(col => {
+        if (col.id === columnId) {
+          return { ...col, tasks: col.tasks.filter(t => t.id !== tempId) }
+        }
+        return col
+      }))
+      logActivity(`Failed to add task: ${(error as any)?.message || 'Unknown error'}`, 'ERROR')
     }
   }
 
@@ -164,11 +239,17 @@ export function TrelloBoard() {
         onDragEnd={handleDragEnd}
       >
         {columns.map((column) => (
-          <div key={column.id} className="w-80 flex-shrink-0">
+          <div key={column.id} className="w-80 flex-shrink-0" data-testid={`column-${column.id}`}>
             <Card className="bg-muted border-none shadow-none h-fit">
               <CardHeader className="p-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm font-bold text-foreground">{column.title}</CardTitle>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  data-testid="open-add-task"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setAddingToColumn(column.id)}
+                >
                   <Plus className="h-4 w-4" />
                 </Button>
               </CardHeader>
@@ -183,11 +264,42 @@ export function TrelloBoard() {
                     ))}
                   </div>
                 </SortableContext>
-                <div className="mt-2">
-                   <Button variant="ghost" className="w-full justify-start text-muted-foreground text-xs hover:bg-accent h-8">
-                     <Plus className="h-3 w-3 mr-2" /> Add a card
-                   </Button>
-                </div>
+                
+                {addingToColumn === column.id ? (
+                  <div className="mt-2 space-y-2">
+                    <Input
+                      autoFocus
+                      data-testid="new-task-input"
+                      placeholder="Enter task title..."
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addTask(column.id)
+                        if (e.key === "Escape") setAddingToColumn(null)
+                      }}
+                      className="bg-card text-sm h-9"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" data-testid="confirm-add-task" onClick={() => addTask(column.id)} className="h-8">
+                        <Check className="h-4 w-4 mr-1" /> Add
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setAddingToColumn(null)} className="h-8">
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2">
+                    <Button 
+                      variant="ghost" 
+                      data-testid="add-card-trigger"
+                      className="w-full justify-start text-muted-foreground text-xs hover:bg-accent h-8"
+                      onClick={() => setAddingToColumn(column.id)}
+                    >
+                      <Plus className="h-3 w-3 mr-2" /> Add a card
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -232,6 +344,7 @@ function SortableTask({ task }: { task: Task }) {
     <div
       ref={setNodeRef}
       style={style}
+      data-testid={`task-card-${toTestIdSafe(task.title)}`}
       className="bg-card p-3 rounded-md shadow-sm border border-border group relative"
     >
       <div className="flex items-start gap-2">

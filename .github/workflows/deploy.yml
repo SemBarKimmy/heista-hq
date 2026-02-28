@@ -1,0 +1,180 @@
+name: Deploy to Vercel (controlled by GitHub Actions)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  # prevent overlapping deploys for same branch/PR
+  group: vercel-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_SCOPE: ${{ secrets.VERCEL_SCOPE }}
+
+    steps:
+      - name: Determine deploy mode
+        id: mode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EVENT='${{ github.event.workflow_run.event }}'
+          BRANCH='${{ github.event.workflow_run.head_branch }}'
+
+          echo "event=$EVENT" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT" = "pull_request" ]; then
+            # basic guard: only deploy PR previews when the PR comes from same repo
+            HEAD_REPO='${{ github.event.workflow_run.pull_requests[0].head.repo.full_name }}'
+            BASE_REPO='${{ github.repository }}'
+            BASE_BRANCH='${{ github.event.workflow_run.pull_requests[0].base.ref }}'
+
+            echo "pr_number=${{ github.event.workflow_run.pull_requests[0].number }}" >> "$GITHUB_OUTPUT"
+            echo "head_repo=$HEAD_REPO" >> "$GITHUB_OUTPUT"
+            echo "base_branch=$BASE_BRANCH" >> "$GITHUB_OUTPUT"
+
+            if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              echo "reason=fork_pr" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if [ "$BASE_BRANCH" != "develop" ] && [ "$BASE_BRANCH" != "master" ]; then
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              echo "reason=non_target_base_branch" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "target=preview" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # push deployments: only for develop/master
+          if [ "$EVENT" = "push" ] && { [ "$BRANCH" = "develop" ] || [ "$BRANCH" = "master" ]; }; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            if [ "$BRANCH" = "master" ]; then
+              echo "target=production" >> "$GITHUB_OUTPUT"
+            else
+              echo "target=develop" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          echo "deploy=false" >> "$GITHUB_OUTPUT"
+          echo "reason=not_applicable" >> "$GITHUB_OUTPUT"
+
+      - name: Stop if no deploy
+        if: steps.mode.outputs.deploy != 'true'
+        run: |
+          echo "Skipping deploy: ${{ steps.mode.outputs.reason }}"
+
+      - name: Checkout
+        if: steps.mode.outputs.deploy == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node
+        if: steps.mode.outputs.deploy == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps (frontend)
+        if: steps.mode.outputs.deploy == 'true'
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Vercel CLI
+        if: steps.mode.outputs.deploy == 'true'
+        run: npm i -g vercel@latest
+
+      - name: Pull Vercel env
+        if: steps.mode.outputs.deploy == 'true'
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.mode.outputs.target }}" = "production" ]; then
+            vercel pull --yes --environment=production --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN"
+          else
+            vercel pull --yes --environment=preview --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN"
+          fi
+
+      - name: Build (prebuilt)
+        if: steps.mode.outputs.deploy == 'true'
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.mode.outputs.target }}" = "production" ]; then
+            vercel build --prod --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN"
+          else
+            vercel build --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN"
+          fi
+
+      - name: Deploy (prebuilt)
+        if: steps.mode.outputs.deploy == 'true'
+        id: deploy
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.mode.outputs.target }}" = "production" ]; then
+            DEPLOY_LOG=$(vercel deploy --prebuilt --prod --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN")
+          else
+            DEPLOY_LOG=$(vercel deploy --prebuilt --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN")
+          fi
+
+          echo "$DEPLOY_LOG"
+
+          # Vercel CLI output can include progress lines; extract the final deployment URL reliably.
+          DEPLOYMENT_URL=$(echo "$DEPLOY_LOG" | grep -Eo 'https?://[^ ]+' | tail -n 1)
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "Failed to parse deployment URL from vercel output" >&2
+            exit 1
+          fi
+
+          echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to: $DEPLOYMENT_URL"
+
+      - name: Alias develop deployment
+        if: steps.mode.outputs.target == 'develop'
+        run: vercel alias set "${{ steps.deploy.outputs.deployment_url }}" heista-dev.vercel.app --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN"
+
+      - name: Alias production deployment
+        if: steps.mode.outputs.target == 'production'
+        run: vercel alias set "${{ steps.deploy.outputs.deployment_url }}" heista-hq.vercel.app --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN"
+
+      - name: Comment PR with preview URL
+        if: steps.mode.outputs.target == 'preview'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = Number('${{ steps.mode.outputs.pr_number }}');
+            const url = '${{ steps.deploy.outputs.deployment_url }}';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              body: `Vercel preview deployed (via GitHub Actions):\n\n${url}`
+            });

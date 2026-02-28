@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["develop", "master"]
+  push:
+    branches: ["**"]
+  schedule:
+    - cron: "0 2 * * *"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+      - name: Run backend tests
+        run: |
+          cd backend
+          go test ./...
+
+  frontend:
+    name: Frontend test + build (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+      - name: Run unit tests
+        run: |
+          cd frontend
+          npm test
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+  tier2-e2e-playwright:
+    name: Tier-2 E2E (Playwright) - scheduled / develop push
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || github.event_name == 'schedule'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+      - name: Install Playwright browser
+        run: |
+          cd frontend
+          npx playwright install --with-deps chromium
+      - name: Run Tier-2 Playwright E2E
+        env:
+          PLAYWRIGHT_BASE_URL: https://heista-dev.vercel.app
+        run: |
+          cd frontend
+          npm run e2e
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

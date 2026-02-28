@@ -1,6 +1,20 @@
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
+process.env.NEXT_PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://heistadev.danuseta.my.id'
+process.env.NEXT_PUBLIC_SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://example.supabase.co'
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  'test-anon-key'
+
+vi.mock('next-themes', () => ({
+  useTheme: () => ({
+    theme: 'light',
+    setTheme: vi.fn(),
+  }),
+}))
+
 // Mock Supabase
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(() => ({
@@ -19,6 +33,7 @@ vi.mock('@supabase/supabase-js', () => ({
       eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
     })),
     channel: vi.fn(() => ({
       on: vi.fn().mockReturnThis(),
