@@ -8,9 +8,13 @@ on:
   schedule:
     - cron: "0 2 * * *"
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/master')
+    name: Backend tests (Go)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +28,7 @@ jobs:
           go test ./...
 
   frontend:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/master')
+    name: Frontend test + build (Node)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +52,7 @@ jobs:
           npm run build
 
   tier2-e2e-playwright:
+    name: Tier-2 E2E (Playwright) - scheduled / develop push
     if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || github.event_name == 'schedule'
     continue-on-error: true
     runs-on: ubuntu-latest
