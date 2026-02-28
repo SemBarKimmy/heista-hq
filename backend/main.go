@@ -84,6 +84,8 @@ func main() {
 	mux.HandleFunc("/api/tasks/", s.taskByID)
 	mux.HandleFunc("/api/logs", s.logs)
 	mux.HandleFunc("/api/token-usage", s.tokenUsage)
+	mux.HandleFunc("/api/usage-windows", s.usageWindows)
+	mux.HandleFunc("/api/rate-limit-events", s.rateLimitEvents)
 	mux.HandleFunc("/api/vps", s.vps)
 	mux.HandleFunc("/api/news", s.news)
 	mux.HandleFunc("/api/trends", s.trends)
