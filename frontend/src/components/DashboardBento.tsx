@@ -1,7 +1,9 @@
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { VpsStatusCard } from "@/components/VpsStatusCard"
 import {
   formatTokenUsage,
+  formatWibDateTime,
   isStaleByTwoHours,
   nextRefreshInLabel,
   type TokenUsageData,
@@ -21,40 +23,67 @@ export function DashboardBento({ tokenUsage, vpsStatus, trends }: DashboardBento
   const newsItems = trends.items.filter((item) => item.source === "news").slice(0, 3)
   const twitterItems = trends.items.filter((item) => item.source === "twitter").slice(0, 6)
 
+  const breakdown = (tokenUsage.breakdown ?? []).slice(0, 6)
+
   return (
     <section aria-label="dashboard-bento" className="grid grid-cols-1 gap-4 md:grid-cols-6 md:grid-rows-4">
       <Card className="md:col-span-3 md:row-span-2">
-        <CardHeader>
+        <CardHeader className="space-y-2">
           <CardDescription>AI Token Usage</CardDescription>
-          <CardTitle className="text-2xl">{formatTokenUsage(tokenUsage)}</CardTitle>
+          <CardTitle className="text-2xl tracking-tight">{formatTokenUsage(tokenUsage)}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">Period: {tokenUsage.period} · source: {tokenUsage.source}</p>
-          <div className="h-2 rounded-full bg-muted">
-            <div className="h-2 rounded-full bg-primary" style={{ width: `${Math.min(tokenPercent, 100)}%` }} aria-label="token-usage-progress" />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {tokenPercent}% used · updated {new Date(tokenUsage.updatedAt).toLocaleString()}
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Period: {tokenUsage.period} · source: {tokenUsage.source}
+            {tokenUsage.sourceDetail ? ` (${tokenUsage.sourceDetail})` : null}
           </p>
+
+          <div className="space-y-2">
+            <div className="h-2 rounded-full bg-muted">
+              <div
+                className="h-2 rounded-full bg-primary"
+                style={{ width: `${Math.min(tokenPercent, 100)}%` }}
+                aria-label="token-usage-progress"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {tokenUsage.limitTokens > 0 ? `${tokenPercent}% used` : "limit unknown"} · updated {formatWibDateTime(tokenUsage.updatedAt)} WIB
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground">BY PROVIDER / MODEL</p>
+            {breakdown.length ? (
+              <ul className="space-y-2 text-xs">
+                {breakdown.map((row) => (
+                  <li key={`${row.provider}:${row.model}`} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                    <span className="truncate text-muted-foreground">
+                      {row.provider} · <span className="text-foreground/90">{row.model}</span>
+                    </span>
+                    <span className="tabular-nums text-foreground">{row.usedTokens.toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">Unavailable: provider/model not present in OpenClaw logs.</p>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Quota remaining: unavailable (no provider API). See{" "}
+              <a
+                className="underline underline-offset-4 hover:text-foreground"
+                href="https://github.com/SemBarKimmy/heista-hq/blob/develop/BLUEPRINT.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                docs
+              </a>
+              .
+            </p>
+          </div>
         </CardContent>
       </Card>
 
-      <Card className="md:col-span-3 md:row-span-2">
-        <CardHeader>
-          <CardDescription>VPS Status</CardDescription>
-          <CardTitle className="uppercase">{vpsStatus.status}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <div className="grid grid-cols-3 gap-2">
-            <Badge variant="outline">CPU {vpsStatus.cpuPercent}%</Badge>
-            <Badge variant="outline">RAM {vpsStatus.ramPercent}%</Badge>
-            <Badge variant="outline">Disk {vpsStatus.diskPercent}%</Badge>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {vpsStatus.region} · uptime {vpsStatus.uptimePercent}% · updated {new Date(vpsStatus.updatedAt).toLocaleString()} · source: {vpsStatus.source}
-          </p>
-        </CardContent>
-      </Card>
+      <VpsStatusCard initialData={vpsStatus} />
 
       <Card className="md:col-span-4 md:row-span-2">
         <CardHeader>
@@ -84,7 +113,7 @@ export function DashboardBento({ tokenUsage, vpsStatus, trends }: DashboardBento
             </Badge>
           ))}
           <p className="w-full pt-2 text-xs text-muted-foreground">
-            updated {new Date(trends.updatedAt).toLocaleString()} · stale: {trendsStale ? "yes" : "no"} · next refresh {nextRefreshInLabel(trends.updatedAt)}
+            updated {formatWibDateTime(trends.updatedAt)} WIB · stale: {trendsStale ? "yes" : "no"} · next refresh {nextRefreshInLabel(trends.updatedAt)}
           </p>
         </CardContent>
       </Card>

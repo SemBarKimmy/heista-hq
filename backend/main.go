@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,17 +32,23 @@ type server struct {
 }
 
 type task struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string     `json:"id"`
+	ColumnID    string     `json:"column_id"`
+	Title       string     `json:"title"`
+	Description *string    `json:"description,omitempty"`
+	Order       int        `json:"order"`
+	AssignedTo  *string    `json:"assigned_to,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 type logEntry struct {
-	ID        string    `json:"id"`
-	Level     string    `json:"level"`
-	Message   string    `json:"message"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string         `json:"id"`
+	AgentID   string         `json:"agent_id"`
+	Level     string         `json:"level"`
+	Message   string         `json:"message"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 func main() {
@@ -74,8 +81,11 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.health)
 	mux.HandleFunc("/api/tasks", s.tasks)
+	mux.HandleFunc("/api/tasks/", s.taskByID)
 	mux.HandleFunc("/api/logs", s.logs)
 	mux.HandleFunc("/api/token-usage", s.tokenUsage)
+	mux.HandleFunc("/api/usage-windows", s.usageWindows)
+	mux.HandleFunc("/api/rate-limit-events", s.rateLimitEvents)
 	mux.HandleFunc("/api/vps", s.vps)
 	mux.HandleFunc("/api/news", s.news)
 	mux.HandleFunc("/api/trends", s.trends)
@@ -102,8 +112,9 @@ func withCORS(next http.Handler) http.Handler {
 		if _, ok := allowedOrigins[origin]; ok {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
 		}
 
 		if r.Method == http.MethodOptions {
@@ -124,6 +135,24 @@ func (s *server) tasks(w http.ResponseWriter, r *http.Request) {
 		s.listTasks(w, r)
 	case http.MethodPost:
 		s.createTask(w, r)
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+func (s *server) taskByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
+	id = strings.Trim(id, "/")
+	if id == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPatch:
+		s.updateTask(w, r, id)
+	case http.MethodDelete:
+		s.deleteTask(w, r, id)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
@@ -162,24 +191,32 @@ func (s *server) tokenUsage(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
 	openclawAgentsDir := envOrDefault("OPENCLAW_AGENTS_DIR", "/root/.openclaw/agents")
 
-	usedTokens, fileCount, err := sumOpenClawTokens(openclawAgentsDir, since)
+	usedTokens, fileCount, breakdown, err := sumOpenClawTokens(openclawAgentsDir, since)
 	sourceDetail := "openclaw-sessions-jsonl"
 	if err != nil {
 		log.Printf("token usage scan failed: %v", err)
 		sourceDetail = "openclaw-sessions-jsonl:error"
 		usedTokens = 0
 		fileCount = 0
+		breakdown = map[providerModelKey]int{}
 	}
 
 	type tokenUsagePayload struct {
-		UsedTokens   int    `json:"usedTokens"`
-		LimitTokens  int    `json:"limitTokens"`
-		Period       string `json:"period"`
-		UpdatedAt    string `json:"updatedAt"`
-		Source       string `json:"source"`
-		SourceDetail string `json:"sourceDetail"`
-		FileCount    int    `json:"fileCount"`
+		UsedTokens   int                  `json:"usedTokens"`
+		LimitTokens  int                  `json:"limitTokens"`
+		Period       string               `json:"period"`
+		UpdatedAt    string               `json:"updatedAt"`
+		Source       string               `json:"source"`
+		SourceDetail string               `json:"sourceDetail"`
+		FileCount    int                  `json:"fileCount"`
+		Breakdown    []providerModelUsage `json:"breakdown"`
 	}
+
+	usages := make([]providerModelUsage, 0, len(breakdown))
+	for k, v := range breakdown {
+		usages = append(usages, providerModelUsage{Provider: k.Provider, Model: k.Model, UsedTokens: v})
+	}
+	sort.Slice(usages, func(i, j int) bool { return usages[i].UsedTokens > usages[j].UsedTokens })
 
 	payload := tokenUsagePayload{
 		UsedTokens:   usedTokens,
@@ -189,6 +226,7 @@ func (s *server) tokenUsage(w http.ResponseWriter, r *http.Request) {
 		Source:       "openclaw",
 		SourceDetail: sourceDetail,
 		FileCount:    fileCount,
+		Breakdown:    usages,
 	}
 
 	writeJSON(w, http.StatusOK, payload)
@@ -276,14 +314,35 @@ func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	columnIDsParam := strings.TrimSpace(r.URL.Query().Get("columnIds"))
+	columnIDs := make([]string, 0)
+	if columnIDsParam != "" {
+		for _, part := range strings.Split(columnIDsParam, ",") {
+			v := strings.TrimSpace(part)
+			if v != "" {
+				columnIDs = append(columnIDs, v)
+			}
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id::text, title, status, created_at
-		FROM public.api_tasks
-		ORDER BY created_at DESC
-		LIMIT 100`)
+	query := `
+		SELECT id::text, column_id, title, description, "order", assigned_to, created_at, updated_at
+		FROM public.api_tasks`
+	args := make([]any, 0)
+	if len(columnIDs) > 0 {
+		placeholders := make([]string, 0, len(columnIDs))
+		for i, id := range columnIDs {
+			args = append(args, id)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		}
+		query += fmt.Sprintf(" WHERE column_id IN (%s)", strings.Join(placeholders, ","))
+	}
+	query += ` ORDER BY column_id, "order" ASC, created_at ASC LIMIT 500`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -293,7 +352,7 @@ func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
 	items := make([]task, 0)
 	for rows.Next() {
 		var t task
-		if err := rows.Scan(&t.ID, &t.Title, &t.Status, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.ColumnID, &t.Title, &t.Description, &t.Order, &t.AssignedTo, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -314,21 +373,42 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var in struct {
-		Title  string `json:"title"`
-		Status string `json:"status"`
+		Title       string  `json:"title"`
+		ColumnID    string  `json:"column_id"`
+		Description *string `json:"description"`
+		Order       *int    `json:"order"`
+		AssignedTo  *string `json:"assigned_to"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
 	in.Title = strings.TrimSpace(in.Title)
-	in.Status = strings.TrimSpace(in.Status)
+	in.ColumnID = strings.TrimSpace(in.ColumnID)
+	if in.Description != nil {
+		d := strings.TrimSpace(*in.Description)
+		in.Description = &d
+	}
+	if in.AssignedTo != nil {
+		a := strings.TrimSpace(*in.AssignedTo)
+		in.AssignedTo = &a
+	}
+
 	if in.Title == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title is required"})
 		return
 	}
-	if in.Status == "" {
-		in.Status = "todo"
+	if in.ColumnID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "column_id is required"})
+		return
+	}
+
+	order := 0
+	if in.Order != nil {
+		order = *in.Order
+		if order < 0 {
+			order = 0
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -336,10 +416,11 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
 
 	var out task
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO public.api_tasks (title, status)
-		VALUES ($1, $2)
-		RETURNING id::text, title, status, created_at`, in.Title, in.Status,
-	).Scan(&out.ID, &out.Title, &out.Status, &out.CreatedAt)
+		INSERT INTO public.api_tasks (column_id, title, description, "order", assigned_to)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id::text, column_id, title, description, "order", assigned_to, created_at, updated_at`,
+		in.ColumnID, in.Title, in.Description, order, in.AssignedTo,
+	).Scan(&out.ID, &out.ColumnID, &out.Title, &out.Description, &out.Order, &out.AssignedTo, &out.CreatedAt, &out.UpdatedAt)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -348,7 +429,88 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, out)
 }
 
-func (s *server) listLogs(w http.ResponseWriter, r *http.Request) {
+func (s *server) updateTask(w http.ResponseWriter, r *http.Request, id string) {
+	if s.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
+	var in struct {
+		Title       *string `json:"title"`
+		ColumnID    *string `json:"column_id"`
+		Description *string `json:"description"`
+		Order       *int    `json:"order"`
+		AssignedTo  *string `json:"assigned_to"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+
+	setParts := make([]string, 0)
+	args := make([]any, 0)
+
+	if in.Title != nil {
+		v := strings.TrimSpace(*in.Title)
+		setParts = append(setParts, fmt.Sprintf("title = $%d", len(args)+1))
+		args = append(args, v)
+	}
+	if in.ColumnID != nil {
+		v := strings.TrimSpace(*in.ColumnID)
+		if v == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "column_id cannot be empty"})
+			return
+		}
+		setParts = append(setParts, fmt.Sprintf("column_id = $%d", len(args)+1))
+		args = append(args, v)
+	}
+	if in.Description != nil {
+		d := strings.TrimSpace(*in.Description)
+		setParts = append(setParts, fmt.Sprintf("description = $%d", len(args)+1))
+		args = append(args, d)
+	}
+	if in.Order != nil {
+		ord := *in.Order
+		if ord < 0 {
+			ord = 0
+		}
+		setParts = append(setParts, fmt.Sprintf("\"order\" = $%d", len(args)+1))
+		args = append(args, ord)
+	}
+	if in.AssignedTo != nil {
+		a := strings.TrimSpace(*in.AssignedTo)
+		setParts = append(setParts, fmt.Sprintf("assigned_to = $%d", len(args)+1))
+		args = append(args, a)
+	}
+
+	if len(setParts) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no fields to update"})
+		return
+	}
+
+	setParts = append(setParts, "updated_at = timezone('utc'::text, now())")
+	args = append(args, id)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	query := fmt.Sprintf(`
+		UPDATE public.api_tasks
+		SET %s
+		WHERE id::text = $%d
+		RETURNING id::text, column_id, title, description, "order", assigned_to, created_at, updated_at`, strings.Join(setParts, ", "), len(args))
+
+	var out task
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&out.ID, &out.ColumnID, &out.Title, &out.Description, &out.Order, &out.AssignedTo, &out.CreatedAt, &out.UpdatedAt)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *server) deleteTask(w http.ResponseWriter, r *http.Request, id string) {
 	if s.db == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
 		return
@@ -357,11 +519,48 @@ func (s *server) listLogs(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	res, err := s.db.ExecContext(ctx, `DELETE FROM public.api_tasks WHERE id::text = $1`, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
+}
+
+func (s *server) listLogs(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
+	limit := 100
+	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit"})
+			return
+		}
+		if parsed > 500 {
+			parsed = 500
+		}
+		limit = parsed
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id::text, level, message, created_at
+		SELECT id::text, agent_id, level, message, metadata, timestamp
 		FROM public.api_logs
-		ORDER BY created_at DESC
-		LIMIT 100`)
+		ORDER BY timestamp DESC
+		LIMIT $1`, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -371,9 +570,13 @@ func (s *server) listLogs(w http.ResponseWriter, r *http.Request) {
 	items := make([]logEntry, 0)
 	for rows.Next() {
 		var item logEntry
-		if err := rows.Scan(&item.ID, &item.Level, &item.Message, &item.CreatedAt); err != nil {
+		var metadataJSON []byte
+		if err := rows.Scan(&item.ID, &item.AgentID, &item.Level, &item.Message, &metadataJSON, &item.Timestamp); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
+		}
+		if len(metadataJSON) > 0 {
+			_ = json.Unmarshal(metadataJSON, &item.Metadata)
 		}
 		items = append(items, item)
 	}
@@ -392,35 +595,53 @@ func (s *server) createLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var in struct {
-		Level   string `json:"level"`
-		Message string `json:"message"`
+		AgentID  string         `json:"agent_id"`
+		Level    string         `json:"level"`
+		Message  string         `json:"message"`
+		Metadata map[string]any `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	in.AgentID = strings.TrimSpace(in.AgentID)
 	in.Level = strings.TrimSpace(in.Level)
 	in.Message = strings.TrimSpace(in.Message)
 	if in.Message == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message is required"})
 		return
 	}
+	if in.AgentID == "" {
+		in.AgentID = "unknown"
+	}
 	if in.Level == "" {
 		in.Level = "info"
+	}
+
+	metadataBytes := []byte("null")
+	if in.Metadata != nil {
+		if encoded, err := json.Marshal(in.Metadata); err == nil {
+			metadataBytes = encoded
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	var out logEntry
+	var metadataJSON []byte
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO public.api_logs (level, message)
-		VALUES ($1, $2)
-		RETURNING id::text, level, message, created_at`, in.Level, in.Message,
-	).Scan(&out.ID, &out.Level, &out.Message, &out.CreatedAt)
+		INSERT INTO public.api_logs (agent_id, level, message, metadata)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id::text, agent_id, level, message, metadata, timestamp`,
+		in.AgentID, in.Level, in.Message, metadataBytes,
+	).Scan(&out.ID, &out.AgentID, &out.Level, &out.Message, &metadataJSON, &out.Timestamp)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if len(metadataJSON) > 0 {
+		_ = json.Unmarshal(metadataJSON, &out.Metadata)
 	}
 
 	writeJSON(w, http.StatusCreated, out)
@@ -431,16 +652,35 @@ func ensureSchema(ctx context.Context, db *sql.DB) error {
 		`CREATE EXTENSION IF NOT EXISTS pgcrypto`,
 		`CREATE TABLE IF NOT EXISTS public.api_tasks (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			column_id TEXT NOT NULL DEFAULT 'col-1',
 			title TEXT NOT NULL,
+			description TEXT,
+			"order" INTEGER NOT NULL DEFAULT 0,
+			assigned_to TEXT,
 			status TEXT NOT NULL DEFAULT 'todo',
-			created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+			created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+			updated_at TIMESTAMPTZ
 		)`,
+		`ALTER TABLE public.api_tasks ADD COLUMN IF NOT EXISTS column_id TEXT`,
+		`ALTER TABLE public.api_tasks ADD COLUMN IF NOT EXISTS description TEXT`,
+		`ALTER TABLE public.api_tasks ADD COLUMN IF NOT EXISTS "order" INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE public.api_tasks ADD COLUMN IF NOT EXISTS assigned_to TEXT`,
+		`ALTER TABLE public.api_tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`,
+		`UPDATE public.api_tasks SET column_id = COALESCE(NULLIF(column_id, ''), NULLIF(status, ''), 'col-1') WHERE column_id IS NULL OR column_id = ''`,
+
 		`CREATE TABLE IF NOT EXISTS public.api_logs (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			agent_id TEXT NOT NULL DEFAULT 'unknown',
 			level TEXT NOT NULL DEFAULT 'info',
 			message TEXT NOT NULL,
+			metadata JSONB,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
 			created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 		)`,
+		`ALTER TABLE public.api_logs ADD COLUMN IF NOT EXISTS agent_id TEXT NOT NULL DEFAULT 'unknown'`,
+		`ALTER TABLE public.api_logs ADD COLUMN IF NOT EXISTS metadata JSONB`,
+		`ALTER TABLE public.api_logs ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())`,
+		`UPDATE public.api_logs SET timestamp = COALESCE(timestamp, created_at, timezone('utc'::text, now())) WHERE timestamp IS NULL`,
 	}
 	for _, q := range queries {
 		if _, err := db.ExecContext(ctx, q); err != nil {
@@ -620,13 +860,25 @@ func readDiskPercent(path string) float64 {
 	return used
 }
 
-func sumOpenClawTokens(agentsDir string, since time.Time) (int, int, error) {
+type providerModelKey struct {
+	Provider string
+	Model    string
+}
+
+type providerModelUsage struct {
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+	UsedTokens int    `json:"usedTokens"`
+}
+
+func sumOpenClawTokens(agentsDir string, since time.Time) (int, int, map[providerModelKey]int, error) {
 	tokens := 0
 	files := 0
+	breakdown := make(map[providerModelKey]int)
 	// Directory structure: <agentsDir>/<agent>/sessions/<session>.jsonl
 	agentEntries, err := os.ReadDir(agentsDir)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	for _, agent := range agentEntries {
 		if !agent.IsDir() {
@@ -646,7 +898,7 @@ func sumOpenClawTokens(agentsDir string, since time.Time) (int, int, error) {
 				continue
 			}
 			path := filepath.Join(sessionsDir, name)
-			fileTokens, ok, err := sumTokensInJSONL(path, since)
+			fileTokens, fileBreakdown, ok, err := sumTokensInJSONL(path, since)
 			if err != nil {
 				continue
 			}
@@ -654,15 +906,18 @@ func sumOpenClawTokens(agentsDir string, since time.Time) (int, int, error) {
 				files++
 			}
 			tokens += fileTokens
+			for k, v := range fileBreakdown {
+				breakdown[k] += v
+			}
 		}
 	}
-	return tokens, files, nil
+	return tokens, files, breakdown, nil
 }
 
-func sumTokensInJSONL(path string, since time.Time) (int, bool, error) {
+func sumTokensInJSONL(path string, since time.Time) (int, map[providerModelKey]int, bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return 0, false, err
+		return 0, nil, false, err
 	}
 	defer f.Close()
 
@@ -673,13 +928,16 @@ func sumTokensInJSONL(path string, since time.Time) (int, bool, error) {
 
 	tokens := 0
 	counted := false
+	breakdown := make(map[providerModelKey]int)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		var rec struct {
 			Type      string `json:"type"`
 			Timestamp string `json:"timestamp"`
 			Message   *struct {
-				Usage *struct {
+				Provider string `json:"provider"`
+				Model    string `json:"model"`
+				Usage    *struct {
 					TotalTokens int `json:"totalTokens"`
 				} `json:"usage"`
 			} `json:"message"`
@@ -701,12 +959,21 @@ func sumTokensInJSONL(path string, since time.Time) (int, bool, error) {
 			continue
 		}
 		tokens += rec.Message.Usage.TotalTokens
+		provider := strings.TrimSpace(rec.Message.Provider)
+		if provider == "" {
+			provider = "unknown"
+		}
+		model := strings.TrimSpace(rec.Message.Model)
+		if model == "" {
+			model = "unknown"
+		}
+		breakdown[providerModelKey{Provider: provider, Model: model}] += rec.Message.Usage.TotalTokens
 		counted = true
 	}
 	if err := scanner.Err(); err != nil {
-		return 0, false, err
+		return 0, nil, false, err
 	}
-	return tokens, counted, nil
+	return tokens, breakdown, counted, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

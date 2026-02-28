@@ -43,6 +43,8 @@
 | 8 (v2) | Monitoring & Feeds split: `/monitor` + raw `/logs` + data adapters dashboard + unit tests | PR: https://github.com/SemBarKimmy/heista-hq/pull/3 | merged |
 | 9 (v2) | `/tasks` page as full board + floating centered top nav + mobile drawer polish + route tests | Branch: `feat/v2-tasks-nav` | running |
 | 10 (ops) | Swarm runner + .clawdbot registry (tmux runner, templates, docs) | Branch: `feat/swarm-runner` | running |
+| 11 (v2) | Dashboard polish: token usage (unknown limit), per-provider/model breakdown, WIB timestamps, VPS polling + manual refresh | Branch: `feat/iter1-dashboard-usage-vps` | running |
+| 11 (v2) | Backend API contracts for Kanban Tasks + Agent Logs (PATCH/DELETE, column_id/order, metadata) | Branch: `feat/iter2-kanban-api` | running |
 
 ---
 
@@ -122,4 +124,4 @@
 - Vercel Git auto deployment harus **OFF** (deploy source of truth = GitHub Actions).
 - Release version bump via `.github/workflows/version-bump.yml` + `VERSION` file.
 
-*Last Updated: 2026-02-28 03:16 WIB*
+*Last Updated: 2026-02-28 14:52 WIB*

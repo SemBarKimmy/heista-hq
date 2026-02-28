@@ -99,6 +99,7 @@ describe("dashboard adapters", () => {
 
   it("formats token usage", () => {
     expect(formatTokenUsage({ usedTokens: 1200, limitTokens: 8000, period: "24h", updatedAt: "2026-01-01T00:00:00.000Z", source: "stub" })).toBe("1,200 / 8,000")
+    expect(formatTokenUsage({ usedTokens: 1200, limitTokens: 0, period: "24h", updatedAt: "2026-01-01T00:00:00.000Z", source: "stub" })).toBe("1,200 / unknown")
   })
 
   it("returns trends fallback on failed endpoint", async () => {

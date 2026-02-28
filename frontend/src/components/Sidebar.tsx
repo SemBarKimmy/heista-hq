@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Settings, Activity, Radar } from "lucide-react"
+import { LayoutDashboard, Settings, Activity, Radar, BarChart3 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const routes = [
@@ -20,6 +20,11 @@ const routes = [
     label: "Agent Logs",
     icon: Activity,
     href: "/logs",
+  },
+  {
+    label: "Usage",
+    icon: BarChart3,
+    href: "/usage",
   },
   {
     label: "Settings",
