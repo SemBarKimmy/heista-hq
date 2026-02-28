@@ -66,7 +66,8 @@
 - [x] Realtime INSERT subscription
 
 ### 4. Dashboard data integrations (`/`)
-- [x] Token usage adapter (OpenClaw endpoint + fallback route contract `/api/openclaw/token-usage`)
+- [x] Token usage adapter (OpenClaw scan endpoint + fallback route contract `/api/token-usage`, includes provider/model breakdown)
+- [x] Usage windows adapter (`/api/usage-windows`) + rate limit events (`/api/rate-limit-events`)
 - [x] VPS status adapter (endpoint/DB + fallback; CPU/RAM/Disk + `updatedAt`)
 - [x] News/Twitter trends adapter (DB endpoint + fallback; include `updatedAt` + next refresh indicator)
 - [x] Auto-refresh policy 2 jam (`revalidate = 7200`) + stale check via server timestamp
