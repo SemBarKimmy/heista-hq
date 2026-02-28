@@ -45,26 +45,29 @@ type logEntry struct {
 }
 
 func main() {
-	dsn, err := databaseURL()
-	if err != nil {
-		log.Fatalf("database config error: %v", err)
-	}
+	var db *sql.DB
+	if dsn, err := databaseURL(); err != nil {
+		// Some environments (like lightweight VPS deployments) may run read-only
+		// dashboard endpoints without a database configured.
+		log.Printf("database disabled: %v", err)
+	} else {
+		opened, err := sql.Open("pgx", dsn)
+		if err != nil {
+			log.Fatalf("open db: %v", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		log.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := db.PingContext(ctx); err != nil {
-		log.Fatalf("ping db: %v", err)
-	}
-
-	if err := ensureSchema(ctx, db); err != nil {
-		log.Fatalf("ensure schema: %v", err)
+		if err := opened.PingContext(ctx); err != nil {
+			opened.Close()
+			log.Printf("db ping failed (continuing without db): %v", err)
+		} else if err := ensureSchema(ctx, opened); err != nil {
+			opened.Close()
+			log.Printf("ensure schema failed (continuing without db): %v", err)
+		} else {
+			db = opened
+			defer db.Close()
+		}
 	}
 
 	s := &server{db: db}
@@ -268,6 +271,11 @@ func (s *server) trends(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -300,6 +308,11 @@ func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
 	var in struct {
 		Title  string `json:"title"`
 		Status string `json:"status"`
@@ -336,6 +349,11 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) listLogs(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -368,6 +386,11 @@ func (s *server) listLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) createLog(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
 	var in struct {
 		Level   string `json:"level"`
 		Message string `json:"message"`
