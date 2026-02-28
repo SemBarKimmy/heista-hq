@@ -56,7 +56,7 @@ describe("dashboard adapters", () => {
     })
 
     await getTokenUsage(mockFetch as unknown as typeof fetch)
-    expect(mockFetch).toHaveBeenCalledWith("https://api-dev.heista.danuseta.my.id/api/token-usage", { cache: "no-store" })
+    expect(mockFetch).toHaveBeenCalledWith("https://heistadev.danuseta.my.id/api/token-usage", { cache: "no-store" })
   })
 
   it("maps VPS endpoint response", async () => {

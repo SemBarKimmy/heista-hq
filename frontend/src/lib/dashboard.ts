@@ -39,7 +39,10 @@ function nowIso() {
   return new Date().toISOString()
 }
 
-const REQUIRED_API_URL = "https://api-dev.heista.danuseta.my.id"
+// Fallback base URL for API calls when NEXT_PUBLIC_API_URL is not set.
+// Dev:  https://heistadev.danuseta.my.id
+// Prod: https://heista.danuseta.my.id
+const REQUIRED_API_URL = "https://heistadev.danuseta.my.id"
 
 function normalizeBaseUrl(input?: string) {
   const value = (input || "").trim()
