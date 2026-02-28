@@ -51,10 +51,20 @@ jobs:
         id: deploy
         run: |
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
-            DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN" | tail -n 1)
+            DEPLOY_LOG=$(vercel deploy --prebuilt --prod --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN")
           else
-            DEPLOYMENT_URL=$(vercel deploy --prebuilt --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN" | tail -n 1)
+            DEPLOY_LOG=$(vercel deploy --prebuilt --scope barangs-projects-fc314b46 --token="$VERCEL_TOKEN")
           fi
+
+          echo "$DEPLOY_LOG"
+
+          # Vercel CLI output can include progress lines; extract the final deployment URL reliably.
+          DEPLOYMENT_URL=$(echo "$DEPLOY_LOG" | grep -Eo 'https?://[^ ]+' | tail -n 1)
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "Failed to parse deployment URL from vercel output" >&2
+            exit 1
+          fi
+
           echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
         working-directory: frontend
 
