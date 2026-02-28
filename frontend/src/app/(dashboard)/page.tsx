@@ -1,5 +1,5 @@
 import { DashboardBento } from "@/components/DashboardBento"
-import { getTokenUsage, getTrends, getVpsStatus } from "@/lib/dashboard"
+import { formatTokenUsage, getTokenUsage, getTrends, getVpsStatus } from "@/lib/dashboard"
 
 export const revalidate = 7200
 
@@ -11,7 +11,7 @@ export default async function Home() {
   ])
 
   const quickSummary = [
-    `${tokenUsage.usedTokens.toLocaleString()} / ${tokenUsage.limitTokens.toLocaleString()} tokens used`,
+    `${formatTokenUsage(tokenUsage)} tokens used`,
     `VPS ${vpsStatus.status} • ${vpsStatus.cpuPercent}% CPU • ${vpsStatus.ramPercent}% RAM`,
     `${trends.items.length} intelligence feeds ready`,
   ]

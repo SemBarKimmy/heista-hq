@@ -1,9 +1,17 @@
+export interface ProviderModelUsage {
+  provider: string
+  model: string
+  usedTokens: number
+}
+
 export interface TokenUsageData {
   usedTokens: number
   limitTokens: number
   period: string
   updatedAt: string
   source: "openclaw" | "stub"
+  sourceDetail?: string
+  breakdown?: ProviderModelUsage[]
   todo?: string
 }
 
@@ -68,6 +76,8 @@ export async function getTokenUsage(fetcher: typeof fetch = fetch): Promise<Toke
       period: data.period ?? "24h",
       updatedAt: data.updatedAt ?? nowIso(),
       source: data.source === "openclaw" ? "openclaw" : "stub",
+      sourceDetail: (data as any).sourceDetail,
+      breakdown: (data as any).breakdown,
       todo: data.todo,
     }
   } catch {
@@ -77,6 +87,8 @@ export async function getTokenUsage(fetcher: typeof fetch = fetch): Promise<Toke
       period: "24h",
       updatedAt: nowIso(),
       source: "stub",
+      sourceDetail: "unavailable",
+      breakdown: [],
       todo: "Token endpoint unavailable; check NEXT_PUBLIC_API_URL or OPENCLAW_TOKEN_USAGE_ENDPOINT.",
     }
   }
@@ -161,6 +173,23 @@ export function nextRefreshInLabel(serverTimestamp: string, now = new Date()): s
 }
 
 export function formatTokenUsage(data: TokenUsageData): string {
-  if (!data.limitTokens) return "0 / 0"
-  return `${data.usedTokens.toLocaleString()} / ${data.limitTokens.toLocaleString()}`
+  const used = data.usedTokens.toLocaleString()
+  if (data.limitTokens > 0) {
+    return `${used} / ${data.limitTokens.toLocaleString()}`
+  }
+  return `${used} / unknown`
+}
+
+export function formatWibDateTime(isoString: string): string {
+  const dt = new Date(isoString)
+  if (Number.isNaN(dt.getTime())) return "invalid time"
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(dt)
 }
