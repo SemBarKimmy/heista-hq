@@ -45,7 +45,7 @@
 | 10 (ops) | Swarm runner + .clawdbot registry (tmux runner, templates, docs) | Branch: `feat/swarm-runner` | running |
 | 11 (v2) | Dashboard polish: token usage (unknown limit), per-provider/model breakdown, WIB timestamps, VPS polling + manual refresh | Branch: `feat/iter1-dashboard-usage-vps` | running |
 | 11 (v2) | Backend API contracts for Kanban Tasks + Agent Logs (PATCH/DELETE, column_id/order, metadata) | Branch: `feat/iter2-kanban-api` | running |
-| 12 (v2) | News feed integration: backend /api/news + frontend card in bento dashboard | PR: dashboard-v2-redesign → develop | ready |
+| 13 (v2) | E2E test reliability + UAT final push | Branch: `feat/uat-final` | in-progress |
 
 ---
 
