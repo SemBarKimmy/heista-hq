@@ -260,7 +260,14 @@ export function DashboardV2() {
       transform: (data) => ({
         updatedAt: data?.updatedAt ?? new Date().toISOString(),
         source: data?.source === "database" ? "database" : "stub",
-        items: Array.isArray(data?.items) ? data.items : [],
+        items: Array.isArray(data?.items)
+          ? data.items.map((item: any) => ({
+              title: item?.title ?? "",
+              source: item?.source ?? "news",
+              url: item?.url,
+              publishedAt: item?.publishedAt ?? item?.published_at,
+            }))
+          : [],
         todo: data?.todo,
       }),
     },
