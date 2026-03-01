@@ -1,0 +1,47 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "H Heista HQ" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e6]: H
+          - generic [ref=e7]: Heista HQ
+        - navigation [ref=e8]:
+          - link "Dashboard" [ref=e9] [cursor=pointer]:
+            - /url: /
+            - img [ref=e10]
+            - text: Dashboard
+          - link "Tasks" [ref=e15] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e16]
+            - text: Tasks
+          - link "Monitor" [ref=e18] [cursor=pointer]:
+            - /url: /monitor
+            - img [ref=e19]
+            - text: Monitor
+          - link "Logs" [ref=e26] [cursor=pointer]:
+            - /url: /logs
+            - img [ref=e27]
+            - text: Logs
+          - link "Settings" [ref=e28] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e29]
+            - text: Settings
+        - button "Toggle theme" [ref=e33]:
+          - img
+          - generic [ref=e34]: Toggle theme
+    - main [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - heading "Agent Logs" [level=1] [ref=e38]
+          - paragraph [ref=e39]: Real-time activity and system events from your agents.
+        - generic [ref=e40]:
+          - generic [ref=e41]:
+            - img [ref=e42]
+            - heading "Raw Terminal Logs" [level=2] [ref=e44]
+          - paragraph [ref=e46]: "[waiting] no log stream yet..."
+  - alert [ref=e47]
+```

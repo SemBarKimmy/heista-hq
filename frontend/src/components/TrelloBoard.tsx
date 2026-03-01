@@ -113,21 +113,22 @@ export function TrelloBoard() {
     const activeId = active.id as string
     const overId = over.id as string
 
-    const activeColumn = findColumn(activeId)
-    const overColumn = findColumn(overId)
-
-    if (!activeColumn || !overColumn || activeColumn.id === overColumn.id) return
-
     setColumns(prev => {
+      const activeColumn = prev.find(col => col.tasks.some(t => t.id === activeId))
+      const overColumn = prev.find(col => col.id === overId || col.tasks.some(t => t.id === overId))
+
+      if (!activeColumn || !overColumn || activeColumn.id === overColumn.id) return prev
+
       const activeItems = [...activeColumn.tasks]
       const overItems = [...overColumn.tasks]
 
       const activeIndex = activeItems.findIndex(t => t.id === activeId)
       const overIndex = overColumn.id === overId ? overItems.length : overItems.findIndex(t => t.id === overId)
+      if (activeIndex < 0 || overIndex < 0) return prev
 
       const [removed] = activeItems.splice(activeIndex, 1)
-      removed.column_id = overColumn.id
-      overItems.splice(overIndex, 0, removed)
+      const movedTask = { ...removed, column_id: overColumn.id }
+      overItems.splice(overIndex, 0, movedTask)
 
       return prev.map(col => {
         if (col.id === activeColumn.id) return { ...col, tasks: activeItems }
@@ -146,38 +147,39 @@ export function TrelloBoard() {
     const activeId = active.id as string
     const overId = over.id as string
 
-    const activeColumn = findColumn(activeId)
-    const overColumn = findColumn(overId)
+    const finalColumns = (() => {
+      if (activeId === overId) return columns
 
-    if (!activeColumn || !overColumn) return
+      const activeColumn = columns.find(col => col.tasks.some(t => t.id === activeId))
+      const overColumn = columns.find(col => col.id === overId || col.tasks.some(t => t.id === overId))
+      if (!activeColumn || !overColumn) return columns
 
-    if (activeId !== overId) {
-      setColumns(prev => {
+      if (activeColumn.id === overColumn.id) {
         const activeIndex = activeColumn.tasks.findIndex(t => t.id === activeId)
-        const overIndex = overColumn.tasks.findIndex(t => t.id === overId)
+        const overIndex = activeColumn.tasks.findIndex(t => t.id === overId)
+        if (activeIndex < 0 || overIndex < 0) return columns
 
-        let newTasks = [...overColumn.tasks]
-        if (activeColumn.id === overColumn.id) {
-          newTasks = arrayMove(overColumn.tasks, activeIndex, overIndex)
-        }
-
-        return prev.map(col => {
-          if (col.id === overColumn.id) return { ...col, tasks: newTasks }
-          return col
-        })
-      })
-    }
-
-    // Sync to DB
-    const finalCol = findColumn(activeId)
-    if (finalCol) {
-      const task = finalCol.tasks.find(t => t.id === activeId)
-      const index = finalCol.tasks.findIndex(t => t.id === activeId)
-      if (task) {
-        await boardApi.updateTaskOrder(activeId, finalCol.id, index)
-        logActivity(`Moved task "${task.title}" to ${finalCol.title}`, 'SUCCESS')
+        return columns.map(col =>
+          col.id === activeColumn.id
+            ? { ...col, tasks: arrayMove(col.tasks, activeIndex, overIndex) }
+            : col
+        )
       }
-    }
+
+      return columns
+    })()
+
+    setColumns(finalColumns)
+
+    const finalCol = finalColumns.find(col => col.tasks.some(t => t.id === activeId))
+    if (!finalCol) return
+
+    const task = finalCol.tasks.find(t => t.id === activeId)
+    const index = finalCol.tasks.findIndex(t => t.id === activeId)
+    if (!task || index < 0) return
+
+    await boardApi.updateTaskOrder(activeId, finalCol.id, index)
+    logActivity(`Moved task "${task.title}" to ${finalCol.title}`, 'SUCCESS')
   }
 
   const addTask = async (columnId: string) => {

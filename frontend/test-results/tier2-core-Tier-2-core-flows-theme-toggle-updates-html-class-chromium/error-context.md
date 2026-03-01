@@ -1,0 +1,149 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "H Heista HQ" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e6]: H
+          - generic [ref=e7]: Heista HQ
+        - navigation [ref=e8]:
+          - link "Dashboard" [ref=e9] [cursor=pointer]:
+            - /url: /
+            - img [ref=e10]
+            - text: Dashboard
+          - link "Tasks" [ref=e15] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e16]
+            - text: Tasks
+          - link "Monitor" [ref=e18] [cursor=pointer]:
+            - /url: /monitor
+            - img [ref=e19]
+            - text: Monitor
+          - link "Logs" [ref=e26] [cursor=pointer]:
+            - /url: /logs
+            - img [ref=e27]
+            - text: Logs
+          - link "Settings" [ref=e28] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e29]
+            - text: Settings
+        - button "Toggle theme" [active] [ref=e33]:
+          - img
+          - generic [ref=e34]: Toggle theme
+    - main [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - generic [ref=e38]:
+            - generic [ref=e39]:
+              - generic [ref=e40]: BLUEPRINT v2
+              - generic [ref=e41]: VPS degraded
+              - generic [ref=e42]: quota unknown
+            - heading "Command Dashboardcyber-minimal" [level=1] [ref=e43]
+            - paragraph [ref=e44]: Live infrastructure + OpenClaw intelligence telemetry. Solid color system, bento layout, dark-first.
+          - generic [ref=e45]:
+            - button "Refresh" [ref=e46]:
+              - img
+              - text: Refresh
+            - link "View logs" [ref=e47] [cursor=pointer]:
+              - /url: /logs
+              - text: View logs
+              - img
+        - region "dashboard-metrics" [ref=e48]:
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - paragraph [ref=e54]: VPS REGION
+              - generic [ref=e55]: clawnu
+              - paragraph [ref=e56]: 100% CPU · 77.9% RAM · 61.3% disk
+            - img [ref=e58]
+        - region "dashboard-bento" [ref=e62]:
+          - generic [ref=e63]:
+            - generic [ref=e64]:
+              - generic [ref=e65]:
+                - generic [ref=e66]:
+                  - img [ref=e67]
+                  - text: Token usage
+                - generic [ref=e70]: poll 12s
+              - generic [ref=e71]: …
+            - generic [ref=e72]:
+              - generic [ref=e73]:
+                - generic "token-usage-progress" [ref=e75]
+                - generic [ref=e76]:
+                  - generic [ref=e77]: "period: —"
+                  - generic [ref=e78]: "source: —"
+                  - generic [ref=e79]: quota unknown
+              - generic [ref=e80]:
+                - generic [ref=e82]:
+                  - generic [ref=e83]: Breakdown (24h)
+                  - generic [ref=e84]: Provider / model
+                - generic [ref=e91]:
+                  - generic [ref=e92]: Usage windows
+                  - generic [ref=e93]: 5h vs 7d
+          - generic [ref=e98]:
+            - generic [ref=e99]:
+              - generic [ref=e100]:
+                - generic [ref=e101]:
+                  - img [ref=e102]
+                  - text: VPS telemetry
+                - generic [ref=e105]: poll 12s
+              - generic [ref=e106]: "Status: degraded"
+            - generic [ref=e107]:
+              - generic [ref=e108]:
+                - generic [ref=e109]:
+                  - generic [ref=e110]:
+                    - img [ref=e111]
+                    - text: CPU
+                  - generic [ref=e114]: 100%
+                - generic [ref=e115]:
+                  - generic [ref=e116]:
+                    - img [ref=e117]
+                    - text: RAM
+                  - generic [ref=e119]: 77.9%
+                - generic [ref=e120]:
+                  - generic [ref=e121]:
+                    - img [ref=e122]
+                    - text: Disk
+                  - generic [ref=e124]: 61.3%
+              - paragraph [ref=e125]: updated 01/03/2026, 16.07.12 WIB
+          - generic [ref=e126]:
+            - generic [ref=e127]:
+              - generic [ref=e128]:
+                - generic [ref=e129]:
+                  - img [ref=e130]
+                  - text: X trends
+                - generic [ref=e133]: "stale: no"
+              - generic [ref=e134]: Trend feed
+            - generic [ref=e135]:
+              - list [ref=e136]:
+                - listitem [ref=e137]:
+                  - generic [ref=e138]:
+                    - generic [ref=e139]: "#heista"
+                    - generic [ref=e140]: "1"
+              - paragraph [ref=e141]: updated 01/03/2026, 16.07.12 WIB
+          - generic [ref=e142]:
+            - generic [ref=e143]:
+              - generic [ref=e144]:
+                - generic [ref=e145]:
+                  - img [ref=e146]
+                  - text: News ingestion
+                - generic [ref=e149]: "stale: no"
+              - generic [ref=e150]: Latest headlines
+            - generic [ref=e151]:
+              - generic [ref=e152]:
+                - paragraph [ref=e153]: No headlines available
+                - paragraph [ref=e154]: No ingested records in api_news yet.
+              - paragraph [ref=e155]: updated 01/03/2026, 16.07.12 WIB
+          - generic [ref=e157]:
+            - generic [ref=e158]:
+              - generic [ref=e159]:
+                - img [ref=e160]
+                - text: Rate-limit events
+              - generic [ref=e162]: "window: 5h"
+            - generic [ref=e163]: 429 / overload
+        - generic [ref=e168]:
+          - paragraph [ref=e169]: "API base: https://heistadev.danuseta.my.id"
+          - paragraph [ref=e170]: All cards are solid-color (no gradients). Dark mode is the reference.
+  - alert [ref=e171]
+```

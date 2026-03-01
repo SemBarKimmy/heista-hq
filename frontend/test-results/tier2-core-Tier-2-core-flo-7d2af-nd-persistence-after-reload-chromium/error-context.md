@@ -1,0 +1,68 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "H Heista HQ" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e6]: H
+          - generic [ref=e7]: Heista HQ
+        - navigation [ref=e8]:
+          - link "Dashboard" [ref=e9] [cursor=pointer]:
+            - /url: /
+            - img [ref=e10]
+            - text: Dashboard
+          - link "Tasks" [ref=e15] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e16]
+            - text: Tasks
+          - link "Monitor" [ref=e18] [cursor=pointer]:
+            - /url: /monitor
+            - img [ref=e19]
+            - text: Monitor
+          - link "Logs" [ref=e26] [cursor=pointer]:
+            - /url: /logs
+            - img [ref=e27]
+            - text: Logs
+          - link "Settings" [ref=e28] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e29]
+            - text: Settings
+        - button "Toggle theme" [ref=e33]:
+          - img
+          - generic [ref=e34]: Toggle theme
+    - main [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - heading "Tasks Board" [level=1] [ref=e38]
+          - paragraph [ref=e39]: Full kanban board untuk planning, eksekusi, dan tracking progress tim.
+        - generic [ref=e41]:
+          - generic [ref=e43]:
+            - generic [ref=e44]:
+              - generic [ref=e45]: To Do
+              - button [ref=e46]:
+                - img
+            - button "Add a card" [active] [ref=e50]:
+              - img
+              - text: Add a card
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - generic [ref=e54]: In Progress
+              - button [ref=e55]:
+                - img
+            - button "Add a card" [ref=e59]:
+              - img
+              - text: Add a card
+          - generic [ref=e61]:
+            - generic [ref=e62]:
+              - generic [ref=e63]: Done
+              - button [ref=e64]:
+                - img
+            - button "Add a card" [ref=e68]:
+              - img
+              - text: Add a card
+          - status [ref=e69]
+  - alert [ref=e70]
+```
