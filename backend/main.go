@@ -51,6 +51,19 @@ type logEntry struct {
 	Timestamp time.Time      `json:"timestamp"`
 }
 
+type newsItem struct {
+	Title     string `json:"title"`
+	Source    string `json:"source"`
+	URL       string `json:"url,omitempty"`
+	Published string `json:"published_at,omitempty"`
+}
+
+type trendItem struct {
+	Title  string `json:"title"`
+	Source string `json:"source"`
+	Score  int    `json:"score"`
+}
+
 func main() {
 	var db *sql.DB
 	if dsn, err := databaseURL(); err != nil {
@@ -282,13 +295,58 @@ func (s *server) news(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
+	limit := 20
+	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit"})
+			return
+		}
+		if parsed > 100 {
+			parsed = 100
+		}
+		limit = parsed
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT title, source, COALESCE(url, ''), published_at
+		FROM public.api_news
+		ORDER BY published_at DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	items := make([]newsItem, 0, limit)
+	for rows.Next() {
+		var item newsItem
+		var published time.Time
+		if err := rows.Scan(&item.Title, &item.Source, &item.URL, &published); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		item.Published = published.UTC().Format(time.RFC3339)
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"updatedAt": time.Now().UTC().Format(time.RFC3339),
-		"source":    "placeholder",
-		"items": []map[string]string{
-			{"title": "News feed endpoint online (placeholder)", "source": "news"},
-		},
-		"todo": "Wire /api/news to Supabase intelligence tables when schema is finalized.",
+		"source":    "database",
+		"items":     items,
 	})
 }
 
@@ -298,16 +356,68 @@ func (s *server) trends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ts := time.Now().UTC().Format(time.RFC3339)
+	if s.db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
+	limit := 20
+	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit"})
+			return
+		}
+		if parsed > 100 {
+			parsed = 100
+		}
+		limit = parsed
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT title, source, score, captured_at
+		FROM public.api_trends
+		ORDER BY captured_at DESC, score DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	items := make([]trendItem, 0, limit)
+	latest := time.Time{}
+	for rows.Next() {
+		var item trendItem
+		var captured time.Time
+		if err := rows.Scan(&item.Title, &item.Source, &item.Score, &captured); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if captured.After(latest) {
+			latest = captured
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	now := time.Now().UTC()
+	fetchedAt := now
+	if !latest.IsZero() {
+		fetchedAt = latest.UTC()
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"fetchedAt": ts,
-		"updatedAt": ts,
+		"fetchedAt": fetchedAt.Format(time.RFC3339),
+		"updatedAt": now.Format(time.RFC3339),
 		"source":    "database",
-		"items": []map[string]any{
-			{"title": "Endpoint live: replace with real trend aggregation", "source": "news", "score": 1},
-			{"title": "#heista", "source": "twitter", "score": 1},
-		},
-		"todo": "Wire /api/trends to Supabase materialized view or ingestion pipeline.",
+		"items":     items,
 	})
 }
 
@@ -684,6 +794,32 @@ func ensureSchema(ctx context.Context, db *sql.DB) error {
 		`ALTER TABLE public.api_logs ADD COLUMN IF NOT EXISTS metadata JSONB`,
 		`ALTER TABLE public.api_logs ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())`,
 		`UPDATE public.api_logs SET timestamp = COALESCE(timestamp, created_at, timezone('utc'::text, now())) WHERE timestamp IS NULL`,
+
+		`CREATE TABLE IF NOT EXISTS public.api_news (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			title TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT 'news',
+			url TEXT,
+			published_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+		)`,
+		`ALTER TABLE public.api_news ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'news'`,
+		`ALTER TABLE public.api_news ADD COLUMN IF NOT EXISTS url TEXT`,
+		`ALTER TABLE public.api_news ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())`,
+		`CREATE INDEX IF NOT EXISTS idx_api_news_published_at ON public.api_news (published_at DESC)`,
+
+		`CREATE TABLE IF NOT EXISTS public.api_trends (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			title TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT 'twitter',
+			score INTEGER NOT NULL DEFAULT 0,
+			captured_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+		)`,
+		`ALTER TABLE public.api_trends ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'twitter'`,
+		`ALTER TABLE public.api_trends ADD COLUMN IF NOT EXISTS score INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE public.api_trends ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())`,
+		`CREATE INDEX IF NOT EXISTS idx_api_trends_captured_at ON public.api_trends (captured_at DESC)`,
 	}
 	for _, q := range queries {
 		if _, err := db.ExecContext(ctx, q); err != nil {

@@ -41,6 +41,20 @@ type Loadable<T> = {
   updatedAt: string | null
 }
 
+type NewsItem = {
+  title: string
+  source: string
+  url?: string
+  publishedAt?: string
+}
+
+type NewsFeedData = {
+  updatedAt: string
+  source: "database" | "stub"
+  items: NewsItem[]
+  todo?: string
+}
+
 const POLL_FAST_MS = 12_000
 const POLL_SLOW_MS = 60_000
 
@@ -238,6 +252,27 @@ export function DashboardV2() {
     },
   )
 
+  const news = usePoller<NewsFeedData>(
+    "news",
+    `${baseUrl}/api/news`,
+    {
+      intervalMs: POLL_SLOW_MS,
+      transform: (data) => ({
+        updatedAt: data?.updatedAt ?? new Date().toISOString(),
+        source: data?.source === "database" ? "database" : "stub",
+        items: Array.isArray(data?.items)
+          ? data.items.map((item: any) => ({
+              title: item?.title ?? "",
+              source: item?.source ?? "news",
+              url: item?.url,
+              publishedAt: item?.publishedAt ?? item?.published_at,
+            }))
+          : [],
+        todo: data?.todo,
+      }),
+    },
+  )
+
   const tokenData = token.data
   const vpsData = vps.data
 
@@ -261,7 +296,16 @@ export function DashboardV2() {
     return true
   })
 
+  const safeNews = (news.data?.items ?? []).filter((item) => {
+    const title = String(item?.title ?? "")
+    const lowered = title.toLowerCase()
+    if (!title.trim()) return false
+    if (lowered.includes("endpoint live") || lowered.includes("placeholder") || lowered.includes("replace with")) return false
+    return true
+  })
+
   const trendsStale = trends.data ? isStaleByTwoHours(trends.data.updatedAt) : true
+  const newsStale = news.data ? isStaleByTwoHours(news.data.updatedAt) : true
 
   const refreshAll = () => {
     token.refresh()
@@ -269,6 +313,7 @@ export function DashboardV2() {
     rateLimits.refresh()
     vps.refresh()
     trends.refresh()
+    news.refresh()
   }
 
   return (
@@ -539,16 +584,16 @@ export function DashboardV2() {
         </Card>
 
         {/* Trends */}
-        <Card className="md:col-span-7 border-border/70 bg-card/60">
+        <Card className="md:col-span-4 border-border/70 bg-card/60">
           <CardHeader>
             <CardDescription className="flex items-center justify-between">
               <span className="inline-flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-muted-foreground" />
-                Intelligence feed
+                X trends
               </span>
               <span className="text-xs text-muted-foreground">stale: {trendsStale ? "yes" : "no"}</span>
             </CardDescription>
-            <CardTitle className="text-xl">Trends</CardTitle>
+            <CardTitle className="text-xl">Trend feed</CardTitle>
           </CardHeader>
           <CardContent>
             {trends.error ? <EmptyState title="Trends endpoint failed" detail={trends.error} /> : null}
@@ -561,9 +606,12 @@ export function DashboardV2() {
               </div>
             ) : safeTrends.length ? (
               <ul className="space-y-2 text-sm">
-                {safeTrends.slice(0, 5).map((item) => (
+                {safeTrends.slice(0, 6).map((item) => (
                   <li key={item.title} className="rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-muted-foreground">
-                    {item.title}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="line-clamp-2">{item.title}</span>
+                      <span className="text-xs tabular-nums text-foreground/80">{item.score ?? 0}</span>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -577,8 +625,45 @@ export function DashboardV2() {
           </CardContent>
         </Card>
 
+        {/* News */}
+        <Card className="md:col-span-4 border-border/70 bg-card/60">
+          <CardHeader>
+            <CardDescription className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                News ingestion
+              </span>
+              <span className="text-xs text-muted-foreground">stale: {newsStale ? "yes" : "no"}</span>
+            </CardDescription>
+            <CardTitle className="text-xl">Latest headlines</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {news.error ? <EmptyState title="News endpoint failed" detail={news.error} /> : null}
+
+            {news.loading && !news.data ? (
+              <div className="space-y-2">
+                <Skeleton className="h-9" />
+                <Skeleton className="h-9" />
+                <Skeleton className="h-9" />
+              </div>
+            ) : safeNews.length ? (
+              <ul className="space-y-2 text-sm">
+                {safeNews.slice(0, 5).map((item) => (
+                  <li key={`${item.title}-${item.publishedAt ?? ""}`} className="rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-muted-foreground">
+                    <p className="line-clamp-2">{item.title}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState title="No headlines available" detail="No ingested records in api_news yet." />
+            )}
+
+            {news.data?.updatedAt ? <p className="mt-3 text-xs text-muted-foreground">updated {formatWibDateTime(news.data.updatedAt)} WIB</p> : null}
+          </CardContent>
+        </Card>
+
         {/* Rate limit events */}
-        <Card className="md:col-span-5 border-border/70 bg-card/60">
+        <Card className="md:col-span-4 border-border/70 bg-card/60">
           <CardHeader>
             <CardDescription className="flex items-center justify-between">
               <span className="inline-flex items-center gap-2">
