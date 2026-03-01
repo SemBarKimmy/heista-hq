@@ -45,6 +45,7 @@
 | 10 (ops) | Swarm runner + .clawdbot registry (tmux runner, templates, docs) | Branch: `feat/swarm-runner` | running |
 | 11 (v2) | Dashboard polish: token usage (unknown limit), per-provider/model breakdown, WIB timestamps, VPS polling + manual refresh | Branch: `feat/iter1-dashboard-usage-vps` | running |
 | 11 (v2) | Backend API contracts for Kanban Tasks + Agent Logs (PATCH/DELETE, column_id/order, metadata) | Branch: `feat/iter2-kanban-api` | running |
+| 12 (v2) | News feed integration: backend /api/news + frontend card in bento dashboard | PR: dashboard-v2-redesign → develop | ready |
 
 ---
 
@@ -69,7 +70,8 @@
 - [x] Token usage adapter (OpenClaw scan endpoint + fallback route contract `/api/token-usage`, includes provider/model breakdown)
 - [x] Usage windows adapter (`/api/usage-windows`) + rate limit events (`/api/rate-limit-events`)
 - [x] VPS status adapter (endpoint/DB + fallback; CPU/RAM/Disk + `updatedAt`)
-- [x] News/Twitter trends adapter (DB endpoint + fallback; include `updatedAt` + next refresh indicator)
+- [x] News feed adapter (DB endpoint `/api/news`; query api_news table; include `updatedAt` + next refresh indicator)
+- [x] Twitter trends adapter (DB endpoint `/api/trends`; query api_trends table with score; include `updatedAt`)
 - [x] Auto-refresh policy 2 jam (`revalidate = 7200`) + stale check via server timestamp
 
 ### 5. Testing (XP)
@@ -97,7 +99,9 @@
 
 **Dashboard (`/`)**
 - [ ] Mobile-first layout rapi.
-- [ ] Bento cards tampil: AI token usage, VPS status, News, Twitter trends.
+- [ ] Bento cards tampil: AI token usage, VPS status, News (latest 5 headlines), Twitter trends (top 6 with score).
+- [ ] Stale indicators show correctly (2 hours threshold).
+- [ ] Manual refresh button updates all feeds.
 
 **General**
 - [ ] Dark mode / Light mode toggle berfungsi.
